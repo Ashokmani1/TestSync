@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "357774761447",
+    "project_id": "testsync-cb78d",
+    "storage_bucket": "testsync-cb78d.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:357774761447:android:62a31b33eb56600cacb142",
+        "android_client_info": {
+          "package_name": "com.teksxt.closedtesting"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "357774761447-2eak74mb7lg7la1qh0tbjgku4dc3mjl8.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.teksxt.closedtesting",
+            "certificate_hash": "c4aff4f2a0bc3cb94d80f7ecaebd51ff09ba33f5"
+          }
+        },
+        {
+          "client_id": "357774761447-f55s7bspmadevu2r1smnennh4isj7b5u.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBsDVrihGzBmKxStSxPrpIdBNyW9XkBuvw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "357774761447-f55s7bspmadevu2r1smnennh4isj7b5u.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
