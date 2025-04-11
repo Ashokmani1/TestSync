@@ -5,10 +5,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.storage.FirebaseStorage
 import com.teksxt.closedtesting.data.auth.GoogleSignInHelper
+import com.teksxt.closedtesting.data.auth.SessionManager
 import com.teksxt.closedtesting.myrequest.data.local.dao.AssignedTesterDao
 import com.teksxt.closedtesting.myrequest.data.local.dao.RequestDao
 import com.teksxt.closedtesting.myrequest.data.local.dao.TestDetailsDao
 import com.teksxt.closedtesting.data.preferences.UserPreferences
+import com.teksxt.closedtesting.data.preferences.UserPreferencesManager
 import com.teksxt.closedtesting.data.remote.FirestoreService
 import com.teksxt.closedtesting.data.repository.AuthRepositoryImpl
 import com.teksxt.closedtesting.myrequest.data.repo.RequestRepositoryImpl
@@ -112,5 +114,22 @@ object AppModule {
     ): AppRepository
     {
         return AppRepositoryImpl(firestore, appDao, auth)
+    }
+
+    @Provides
+    @Singleton
+    fun provideUserPreferencesManager(
+        @ApplicationContext context: Context
+    ): UserPreferencesManager {
+        return UserPreferencesManager(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideSessionManager(
+        auth: FirebaseAuth,
+        preferencesManager: UserPreferencesManager
+    ): SessionManager {
+        return SessionManager(auth, preferencesManager)
     }
 }

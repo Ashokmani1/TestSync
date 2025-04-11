@@ -1,17 +1,21 @@
 package com.teksxt.closedtesting.data.repository
 
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.UserProfileChangeRequest
 import com.teksxt.closedtesting.data.auth.GoogleSignInHelper
 import com.teksxt.closedtesting.data.preferences.UserPreferences
 import com.teksxt.closedtesting.data.remote.FirestoreService
 import com.teksxt.closedtesting.data.remote.model.UserDto
+import com.teksxt.closedtesting.domain.model.UserModel
 import com.teksxt.closedtesting.profile.domain.model.User
 import com.teksxt.closedtesting.profile.domain.model.UserType
 import com.teksxt.closedtesting.domain.repository.AuthRepository
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -183,12 +187,98 @@ class AuthRepositoryImpl @Inject constructor(
         awaitClose { firebaseAuth.removeAuthStateListener(listener) }
     }
 
-    override suspend fun resetPassword(email: String): Result<Unit> {
-        return try {
-            firebaseAuth.sendPasswordResetEmail(email).await()
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
+
+    override val currentUser: Flow<UserModel?> = callbackFlow {
+        val listener = FirebaseAuth.AuthStateListener { auth ->
+            trySend(auth.currentUser?.toUserModel())
         }
+        firebaseAuth.addAuthStateListener(listener)
+        awaitClose { firebaseAuth.removeAuthStateListener(listener) }
     }
+
+    override val isEmailVerified: Flow<Boolean> = currentUser.map {
+        it?.isEmailVerified ?: false
+    }
+
+    override suspend fun signIn(email: String, password: String): Result<UserModel> = try {
+        val result = firebaseAuth.signInWithEmailAndPassword(email, password).await()
+        Result.success(result.user?.toUserModel() ?: throw Exception("Authentication failed"))
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun signUp(email: String, password: String): Result<UserModel> = try {
+        val result = firebaseAuth.createUserWithEmailAndPassword(email, password).await()
+        // Send verification email immediately after signup
+        result.user?.let {
+            try {
+                it.sendEmailVerification().await()
+            } catch (e: Exception) {
+                // Just log this error, don't fail the signup
+                e.printStackTrace()
+            }
+        }
+        Result.success(result.user?.toUserModel() ?: throw Exception("User creation failed"))
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun signOut() {
+        firebaseAuth.signOut()
+    }
+
+    override suspend fun resetPassword(email: String): Result<Unit> = try {
+        firebaseAuth.sendPasswordResetEmail(email).await()
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun sendEmailVerification(): Result<Unit> = try {
+        firebaseAuth.currentUser?.sendEmailVerification()?.await()
+            ?: throw Exception("No user logged in")
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun refreshUser(): Result<UserModel> = try {
+        firebaseAuth.currentUser?.reload()?.await()
+        val updatedUser = firebaseAuth.currentUser?.toUserModel()
+            ?: throw Exception("Failed to reload user")
+        Result.success(updatedUser)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun deleteAccount(): Result<Unit> = try {
+        firebaseAuth.currentUser?.delete()?.await() ?: throw Exception("No user logged in")
+        Result.success(Unit)
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    override suspend fun updateProfile(
+        displayName: String?,
+        photoUrl: String?
+    ): Result<UserModel> = try {
+        val user = firebaseAuth.currentUser ?: throw Exception("No user logged in")
+        val profileUpdates = UserProfileChangeRequest.Builder().apply {
+            displayName?.let { setDisplayName(it) }
+            photoUrl?.let { android.net.Uri.parse(it) }?.let { setPhotoUri(it) }
+        }.build()
+
+        user.updateProfile(profileUpdates).await()
+        Result.success(user.toUserModel())
+    } catch (e: Exception) {
+        Result.failure(e)
+    }
+
+    private fun FirebaseUser.toUserModel() = UserModel(
+        uid = uid,
+        email = email ?: "",
+        displayName = displayName,
+        photoUrl = photoUrl?.toString(),
+        isEmailVerified = isEmailVerified
+    )
 }

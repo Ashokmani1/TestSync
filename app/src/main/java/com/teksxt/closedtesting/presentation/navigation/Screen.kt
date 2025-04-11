@@ -1,50 +1,41 @@
 package com.teksxt.closedtesting.presentation.navigation
 
 sealed class Screen(val route: String) {
-
-
-    // Onboarding
-    object RoleSelection : Screen("role_selection")
-    object ProfileSetup : Screen("profile_setup")
-    object OnboardingComplete : Screen("onboarding_complete")
-
-    // Dashboards based on user role
-    object TesterDashboard : Screen("tester_dashboard")
-
-    // Developer screens
-    object RequestTesters : Screen("request_testers")
-    object TestRequestDetail : Screen("test_request_detail")
-    object TestersList : Screen("testers_list")
-
-    // Tester screens
-    object TestingGroups : Screen("testing_groups")
-    object AvailableTests : Screen("available_tests")
-    object TestDetail : Screen("test_detail")
-
-    // Report screens
-    object TestReport : Screen("test_report")
-    object BugReport : Screen("bug_report")
-    object ScreenshotUpload : Screen("screenshot_upload")
-
-    // Subscription screens
-    object Subscription : Screen("subscription")
-    object Payment : Screen("payment")
-
-    // Settings screens
-    object Settings : Screen("settings")
-    object ProfileEdit : Screen("profile_edit")
-    object NotificationSettings : Screen("notification_settings")
-
-
+    
+    // Auth screens
     data object Login : Screen("login")
     data object Signup : Screen("signup")
     data object ForgotPassword : Screen("forgot_password")
+    data object Onboarding : Screen("onboarding")
 
+    // Main
     data object Dashboard : Screen("dashboard")
 
+    // My Requests
     data object MyRequests : Screen("my_requests")
     data object CreateRequest : Screen("create_request")
-    data object DeveloperProfile : Screen("developer_profile")
-    data object RequestDetails : Screen("request_details")
+    data object RequestDetails : Screen("request_details/{requestId}") {
+        fun createRoute(requestId: String) = "request_details/$requestId"
+    }
     data object RequestReports : Screen("request_reports")
+    
+    // Assigned Tests
+    data object MyAssignedTests : Screen("my_assigned_tests")
+    data object AssignedTestDetails : Screen("assigned_test_details/{testId}") {
+        fun createRoute(testId: String) = "assigned_test_details/$testId"
+    }
+    
+    // Explore
+    data object ExploreApps : Screen("explore_apps")
+    
+    // User related
+    data object DeveloperProfile : Screen("developer_profile")
+    data object Profile : Screen("profile")
+    data object Notifications : Screen("notifications")
+    data object Settings : Screen("settings")
+    
+    // Help and Support
+    data object HelpSupport : Screen("help_support")
+    data object TermsConditions : Screen("terms_conditions")
+    data object PrivacyPolicy : Screen("privacy_policy")
 }

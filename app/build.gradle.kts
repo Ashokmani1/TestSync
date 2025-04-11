@@ -86,4 +86,6 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.1.0")
 
     implementation("org.jsoup:jsoup:1.15.4")
+
+    implementation("androidx.datastore:datastore-preferences:1.1.4")
 }
