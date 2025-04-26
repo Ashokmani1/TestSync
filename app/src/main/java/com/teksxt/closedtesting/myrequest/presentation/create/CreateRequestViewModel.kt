@@ -6,9 +6,12 @@ import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
+import com.teksxt.closedtesting.explore.domain.model.App
+import com.teksxt.closedtesting.explore.domain.repo.AppRepository
 import com.teksxt.closedtesting.myrequest.domain.model.Request
 import com.teksxt.closedtesting.myrequest.domain.repo.RequestRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -17,11 +20,13 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.Date
+import java.util.UUID
 import javax.inject.Inject
 
 @HiltViewModel
 class CreateRequestViewModel @Inject constructor(
     private val requestRepository: RequestRepository,
+    private val appRepository: AppRepository,
     private val auth: FirebaseAuth
 ) : ViewModel() {
 
@@ -194,22 +199,71 @@ class CreateRequestViewModel @Inject constructor(
                 // Generate app ID from Play Store link
                 val appId = com.teksxt.closedtesting.util.TestSyncUtil.generateAppId(playStoreLink)
 
+                // Create the request with the current model structure
                 val request = Request(
-                    appId = appId, // Use generated appId
-                    appName = appName,
+                    id = UUID.randomUUID().toString(),
+                    appId = appId,
+                    ownerUserId = currentUserId,
+                    title = appName,
                     description = description,
-                    groupLink = groupLink,
-                    playStoreLink = playStoreLink,
-                    numberOfTesters = numberOfTesters.toInt(),
-                    durationInDays = durationInDays.toInt(),
-                    isPremium = isPremium,
-                    createdBy = currentUserId,
-                    createdAt = Date(),
-                    status = "active"
+                    status = "ACTIVE",
+                    requestType = "FREE",
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    startDate = System.currentTimeMillis(),
+                    endDate = System.currentTimeMillis() + (durationInDays.toInt() * 24 * 60 * 60 * 1000L),
+                    testingDays = durationInDays.toInt(),
+                    requiredTestersCount = numberOfTesters.toInt(),
+                    currentTestersCount = 0,
+                    testerIds = emptyList(),
+                    isPublic = true,
+                    completionRate = 0f,
+                    isPinned = false
                 )
-
-                val requestId = requestRepository.createRequest(request)
-                _createSuccess.emit(requestId)
+                
+                // Create the App if it doesn't exist or update it
+                val app = App(
+                    id = appId,
+                    name = appName,
+                    description = description,
+                    iconUrl = null,
+                    packageName = appId,
+                    playStoreUrl = playStoreLink,
+                    testApkUrl = null,
+                    googleGroupUrl = groupLink,
+                    version = "",
+                    ownerUserId = currentUserId,
+                    categoryId = null,
+                    status = "ACTIVE",
+                    createdAt = System.currentTimeMillis(),
+                    updatedAt = System.currentTimeMillis(),
+                    minSdkVersion = null,
+                    targetSdkVersion = null,
+                    features = null,
+                    requiredPermissions = null,
+                    screenshots = null,
+                    testingInstructions = null,
+                    totalTesters = numberOfTesters.toInt(),
+                    activeTesters = 0,
+                    testingDays = durationInDays.toInt(),
+                    averageRating = null
+                )
+                
+                // First create/update the app
+                val appResult = appRepository.getAppById(appId).getOrNull()
+                if (appResult == null) {
+                    appRepository.createApp(app)
+                } else {
+                    appRepository.updateApp(app)
+                }
+                
+                // Then create the request
+                val result = requestRepository.createRequest(request)
+                if (result.isSuccess) {
+                    _createSuccess.emit(result.getOrDefault(request).id)
+                } else {
+                    _errorMessage.emit(result.exceptionOrNull()?.message ?: "Failed to create request")
+                }
 
             } catch (e: Exception) {
                 _errorMessage.emit(e.message ?: "Failed to create request")

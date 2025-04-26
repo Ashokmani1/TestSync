@@ -62,15 +62,11 @@ fun CreateRequestScreen(
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                windowInsets = WindowInsets(0, 0, 0, 0)
             )
         },
         bottomBar = {
-            Surface(modifier = Modifier.background(MaterialTheme.colorScheme.surface).padding(start = 16.dp, end = 16.dp, bottom = 8.dp)) {
+            Surface(modifier = Modifier.background(MaterialTheme.colorScheme.surface).padding(start = 16.dp, end = 16.dp, bottom = 8.dp, top = 8.dp)) {
                 // Submit Button
                 Button(
                     onClick = { viewModel.submitRequest() },

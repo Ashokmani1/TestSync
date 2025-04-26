@@ -1,6 +1,6 @@
 package com.teksxt.closedtesting.domain.usecase.auth
 
-import com.teksxt.closedtesting.profile.domain.model.User
+import com.teksxt.closedtesting.settings.domain.model.User
 import com.teksxt.closedtesting.domain.repository.AuthRepository
 import javax.inject.Inject
 

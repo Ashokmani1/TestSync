@@ -1,206 +1,345 @@
 package com.teksxt.closedtesting.data.repository
 
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseAuth
-import com.teksxt.closedtesting.data.preferences.UserPreferences
-import com.teksxt.closedtesting.data.remote.FirestoreService
-import com.teksxt.closedtesting.data.remote.model.toDto
-import com.teksxt.closedtesting.data.remote.model.toDomainModel
-import com.teksxt.closedtesting.profile.domain.model.User
-import com.teksxt.closedtesting.domain.model.UserRole
-import com.teksxt.closedtesting.profile.domain.model.UserType
-import com.teksxt.closedtesting.profile.domain.repo.UserRepository
-import com.teksxt.closedtesting.service.AuthService
-import kotlinx.coroutines.channels.awaitClose
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.google.firebase.storage.FirebaseStorage
+import com.teksxt.closedtesting.data.local.dao.UserDao
+import com.teksxt.closedtesting.data.local.entity.UserEntity
+import com.teksxt.closedtesting.data.remote.dto.UserDto
+import com.teksxt.closedtesting.settings.domain.model.User
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
+import com.teksxt.closedtesting.util.Resource
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.text.get
 
+@Singleton
 class UserRepositoryImpl @Inject constructor(
-    private val firestoreService: FirestoreService,
-    private val authService: AuthService,
-    private val firebaseAuth: FirebaseAuth,
-    private val pref: UserPreferences
-) : UserRepository
-{
+    private val firestore: FirebaseFirestore,
+    private val storage: FirebaseStorage,
+    private val auth: FirebaseAuth,
+    private val userDao: UserDao
+) : UserRepository {
 
-    override suspend fun createUser(user: User): Result<User> = try {
-        val userDto = user.toDto()
-        firestoreService.createUser(user.id, userDto)
-        Result.success(user)
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
+    private val usersCollection = firestore.collection("users")
 
-    override suspend fun updateUser(user: User): Result<User> = try {
-        val userDto = user.toDto()
-        firestoreService.updateUser(user.id, userDto.toMap())
-        Result.success(user)
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
+    override suspend fun createUser(user: User): Result<User> {
+        return try {
+            // Create user in Firestore
+            val userDto = UserDto.fromUser(user)
+            val userData = userDtoToMap(userDto).toMutableMap().apply {
+                // Add server timestamps
+                put("createdAt", FieldValue.serverTimestamp())
+                put("lastActive", FieldValue.serverTimestamp())
+            }
+            usersCollection.document(user.id).set(userData).await()
 
-    override suspend fun updateUserType(userId: String, userType: UserType): Result<Unit> = try {
-        firestoreService.updateUser(userId, mapOf("user_type" to userType.name))
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
+            // Save to Room database
+            val userEntity = UserEntity.fromDomainModel(user)
+            userDao.insertUser(userEntity)
 
-    override suspend fun updateUserOnboardingStatus(userId: String, isOnboarded: Boolean): Result<Unit> = try {
-        firestoreService.updateUser(userId, mapOf("is_onboarded" to isOnboarded))
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
-
-    override suspend fun getUserById(userId: String): Result<User?> = try {
-        val userDto = firestoreService.getUserById(userId)
-        Result.success(userDto?.toDomainModel())
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
-
-    override suspend fun getCurrentUser(): User?
-    {
-        println(firestoreService.getUserById(pref.getUserId() ?: "")?.toDomainModel()?.photoUrl)
-        return firestoreService.getUserById(pref.getUserId() ?: "")?.toDomainModel()
-    }
-
-    override fun observeCurrentUser(): Flow<User?> = callbackFlow {
-        val authStateListener = FirebaseAuth.AuthStateListener { auth ->
-            trySend(auth.currentUser?.let {
-                User(
-                    id = it.uid,
-                    name = it.displayName ?: "",
-                    email = it.email ?: "",
-                    photoUrl = it.photoUrl?.toString()
-                )
-            })
-        }
-        
-        firebaseAuth.addAuthStateListener(authStateListener)
-        
-        awaitClose {
-            firebaseAuth.removeAuthStateListener(authStateListener)
+            Result.success(user)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
-    override suspend fun updateUserRole(userId: String, role: UserRole): Result<Unit> = try {
-        firestoreService.updateUser(userId, mapOf("role" to role.name))
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
+    override suspend fun updateUser(user: User): Result<User> {
+        return try {
+            // Update user in Firestore
+            val userDto = UserDto.fromUser(user)
+            usersCollection.document(user.id).set(userDto, SetOptions.merge()).await()
+
+            // Update in Room database
+            val userEntity = UserEntity.fromDomainModel(user)
+            userDao.updateUser(userEntity)
+
+            Result.success(user)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
     }
 
-    override suspend fun updateUserProfile(userId: String, profile: Map<String, Any>): Result<Unit> = try {
-        firestoreService.updateUser(userId, profile)
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
+    override suspend fun getUserById(userId: String): Result<User?> {
+        return try {
+            // First try to get from local database
+            val localUser = userDao.getUserById(userId)
 
-    override suspend fun getCurrentUserRole(): Result<UserRole?> = try {
-        val currentUser = getCurrentUser() ?: return Result.success(null)
-        val userDto = firestoreService.getUserById(currentUser.id)
-        val roleStr = userDto?.data?.get("role") as? String
-        val role = roleStr?.let { 
+            // Then fetch from Firestore and update local if needed
+            val remoteDoc = usersCollection.document(userId).get().await()
+
+            if (remoteDoc.exists()) {
+                val remoteUser = remoteDoc.toObject(UserDto::class.java)
+
+                remoteUser?.let {
+                    // Convert to domain model
+                    val user = it.toUser()
+
+                    // Update local database
+                    userDao.upsertUser(UserEntity.fromDomainModel(user))
+
+                    return Result.success(user)
+                }
+            }
+
+            // If Firestore fetch failed but we have local data, return that
+            if (localUser != null) {
+                return Result.success(localUser.toDomainModel())
+            }
+
+            Result.success(null)
+        } catch (e: Exception) {
+            // If we have local data and remote fetch failed, return local data
             try {
-                UserRole.valueOf(it)
-            } catch (e: Exception) {
-                null
-            }
+                val localUser = userDao.getUserById(userId)
+                if (localUser != null) {
+                    return Result.success(localUser.toDomainModel())
+                }
+            } catch (_: Exception) {}
+
+            Result.failure(e)
         }
-        Result.success(role)
-    } catch (e: Exception) {
-        Result.failure(e)
     }
 
-    // TODO delete userID.
-    override suspend fun completeUserProfile(userId: String, profileData: Map<String, Any>): Result<Unit> = try {
-        val updates = profileData + mapOf("is_onboarded" to true)
-        firestoreService.updateUser(pref.getUserId() ?: "", updates)
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
+    override suspend fun syncUserData() {
+        try {
+            val currentUserId = auth.currentUser?.uid ?: return
+
+            // Check if we have local modifications to push to Firebase
+            val localUser = userDao.getUserById(currentUserId)
+            if (localUser != null && localUser.isModifiedLocally) {
+                val userDto = UserDto.fromUser(localUser.toDomainModel())
+                usersCollection.document(currentUserId).set(userDto, SetOptions.merge()).await()
+
+                // Update sync status
+                userDao.updateSyncStatus(currentUserId, System.currentTimeMillis(), false)
+            }
+
+            // Pull fresh data from Firebase regardless
+            val remoteDoc = usersCollection.document(currentUserId).get().await()
+            if (remoteDoc.exists()) {
+                val remoteUser = remoteDoc.toObject(UserDto::class.java)
+                remoteUser?.let {
+                    val user = it.toUser()
+                    val userEntity = UserEntity.fromDomainModel(user).copy(
+                        lastSyncedAt = System.currentTimeMillis(),
+                        isModifiedLocally = false
+                    )
+                    userDao.upsertUser(userEntity)
+                }
+            }
+        } catch (e: Exception) {
+            // Log error or handle retry logic
+        }
     }
 
-    override suspend fun checkIfUserOnboarded(userId: String): Result<Boolean> = try {
-        val userDto = firestoreService.getUserById(userId)
-        val isOnboarded = userDto?.data?.get("is_onboarded") as? Boolean ?: false
-        Result.success(isOnboarded)
-    } catch (e: Exception) {
-        Result.failure(e)
-    }
-
-    override suspend fun updateUserProfile(name: String, photoUrl: String?): Result<Unit>
-    {
+    override suspend fun updateUserOnboardingStatus(userId: String, isOnboarded: Boolean): Result<Unit> {
         return try {
-            val userId = getCurrentUser()?.id ?: return Result.failure(IllegalStateException("User not logged in"))
 
-            val updates = mutableMapOf<String, Any>()
-            name.takeIf { it.isNotBlank() }?.let { updates["name"] = it }
-            
-            // Handle photo upload if photoUrl is not null
+            // Update Firestore
+            usersCollection.document(userId)
+                .update("onboardingCompleted", isOnboarded)
+                .await()
+
+            // Update local database
+            userDao.updateUserOnboardingStatus(userId, isOnboarded)
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateUserProfile(name: String, photoUrl: String?): Result<Unit> {
+        return try {
+            val userId = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("User not logged in"))
+
+            val updates = mutableMapOf<String, Any>("display_name" to name)
+
+            // Handle profile photo upload if provided
             if (photoUrl != null) {
-                // Upload the image to Firebase Storage
-                val downloadUrl = firestoreService.uploadImageToStorage(userId, photoUrl)
-                
-                // Add download URL to updates
-                updates["photoUrl"] = downloadUrl
+                // Extract file extension (jpg, png, etc.)
+                val fileExtension = photoUrl.substringAfterLast('.', "jpg")
+
+                // Create storage reference with unique filename
+                val storageRef = storage.reference
+                    .child("profile_images")
+                    .child("$userId/profile.$fileExtension")
+
+                // Upload image and get download URL
+                val uploadTask = storageRef.putFile(android.net.Uri.parse(photoUrl)).await()
+                val downloadUrl = uploadTask.storage.downloadUrl.await()
+
+                // Add to updates
+                updates["photo_url"] = downloadUrl.toString()
             }
 
-            firestoreService.updateUser(userId, updates)
+            // Update Firestore
+            usersCollection.document(userId).update(updates).await()
+
+            // Update local database
+            val localUser = userDao.getUserById(userId)
+            if (localUser != null) {
+                val updatedUser = localUser.copy(
+                    displayName = name,
+                    photoUrl = if (photoUrl != null) {
+                        // If we just uploaded a new photo, we'll get the URL in the next sync
+                        // For now, keep using the local URI for UI display
+                        photoUrl
+                    } else {
+                        localUser.photoUrl
+                    },
+                    isModifiedLocally = true
+                )
+                userDao.updateUser(updatedUser)
+            }
+
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    override suspend fun getUserPreferences(): Flow<com.teksxt.closedtesting.profile.domain.model.UserPreferences> = callbackFlow {
-        val userId = getCurrentUser()?.id ?: ""
-        if (userId.isEmpty()) {
-            close()
-            return@callbackFlow
-        }
+    override fun getCurrentUser(): Flow<Resource<User>> = flow {
 
-        val listener = firestoreService.listenToUserPreferences(userId) { prefsSnapshot ->
-            val enableNotifications = prefsSnapshot?.get("enableNotifications") as? Boolean ?: true
-            val enableEmailUpdates = prefsSnapshot?.get("enableEmailUpdates") as? Boolean ?: true
+        emit(Resource.Loading())
 
-            val prefs = com.teksxt.closedtesting.profile.domain.model.UserPreferences(
-                enableNotifications = enableNotifications,
-                enableEmailUpdates = enableEmailUpdates
-            )
+        try {
+            val userId = auth.currentUser?.uid
+            if (userId == null) {
+                emit(Resource.Error("No authenticated user"))
+                return@flow
+            }
 
-            trySend(prefs)
-        }
+            // First emit from local database if available
+            val localUser = userDao.getUserById(userId)
+            if (localUser != null) {
+                emit(Resource.Success(localUser.toDomainModel()))
+            }
 
-        awaitClose {
-            listener.remove()
+            // Then try to get fresh data from Firestore
+            val remoteDoc = usersCollection.document(userId).get().await()
+            if (remoteDoc.exists()) {
+                val remoteUser = remoteDoc.toObject(UserDto::class.java)
+                if (remoteUser != null) {
+                    val user = remoteUser.toUser()
+
+                    // Update local database with fresh data
+                    val userEntity = UserEntity.fromDomainModel(user).copy(
+                        lastSyncedAt = System.currentTimeMillis(),
+                        isModifiedLocally = false
+                    )
+                    userDao.upsertUser(userEntity)
+
+                    emit(Resource.Success(user))
+                }
+            } else if (localUser == null) {
+                emit(Resource.Error("User not found"))
+            }
+        } catch (e: Exception) {
+            // If we previously emitted Success with local data, don't emit Error
+            // This preserves the offline-first approach
+            emit(Resource.Error("Failed to fetch user: ${e.message}"))
         }
     }
 
-    override suspend fun updateUserPreferences(preferences: com.teksxt.closedtesting.profile.domain.model.UserPreferences): Result<Unit>
-    {
+    override suspend fun updateFCMToken(userId: String, token: String): Result<Unit> {
         return try {
-            val userId = getCurrentUser()?.id ?: return Result.failure(IllegalStateException("User not logged in"))
+            // Update Firestore
+            usersCollection.document(userId)
+                .update(mapOf("fcmToken" to token))
+                .await()
 
-            val updates = mapOf(
-                "enableNotifications" to preferences.enableNotifications, "enableEmailUpdates" to preferences.enableEmailUpdates
-            )
+            // Update local database if needed
+            val localUser = userDao.getUserById(userId)
+            if (localUser != null) {
+                val updatedUser = localUser.copy(
+                    fcmToken = token,
+                    isModifiedLocally = true
+                )
+                userDao.updateUser(updatedUser)
+            }
 
-            firestoreService.updateUser(userId, updates)
             Result.success(Unit)
         } catch (e: Exception) {
             Result.failure(e)
         }
     }
 
-    override suspend fun logout(): Result<Unit> = try {
-        firebaseAuth.signOut()
-        pref.clearAll()
-        Result.success(Unit)
-    } catch (e: Exception) {
-        Result.failure(e)
+
+    override suspend fun updateUserLastActive(): Result<Unit>
+    {
+        return try
+        {
+            val userId = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("User not logged in"))
+
+            // Update directly with server timestamp
+            usersCollection.document(userId)
+            .set(
+                mapOf("lastActive" to FieldValue.serverTimestamp()),
+                SetOptions.merge()
+            )
+            .await()
+
+            // Update local version with current time as placeholder
+            val localUser = userDao.getUserById(userId)
+            if (localUser != null) {
+                val updatedUser = localUser.copy(
+                    lastActive = System.currentTimeMillis(),
+                    isModifiedLocally = false // This was just synced to server
+                )
+                userDao.updateUser(updatedUser)
+            }
+
+            Result.success(Unit)
+        }
+        catch (e: Exception)
+        {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Converts UserDto to a Map for Firestore operations.
+     * Note: We exclude time fields that should use serverTimestamp()
+     */
+    private fun userDtoToMap(userDto: UserDto): Map<String, Any?> {
+        return mapOf(
+            // Core user data
+            "userId" to userDto.userId,
+            "email" to userDto.email,
+            "displayName" to userDto.displayName,
+            "photoUrl" to userDto.photoUrl,
+            "fcmToken" to userDto.fcmToken,
+            "emailVerified" to userDto.emailVerified,
+            "accountStatus" to userDto.accountStatus,
+            "onboardingCompleted" to userDto.onboardingCompleted,
+
+            // User devices
+            "devices" to userDto.devices,
+
+            // App owner fields
+            "companyName" to userDto.companyName,
+            "website" to userDto.website,
+            "submittedApps" to userDto.submittedApps,
+
+            // Preferences
+            "notificationPreferences" to userDto.notificationPreferences,
+            "emailNotifications" to userDto.emailNotifications,
+            "pushNotifications" to userDto.pushNotifications,
+            "preferredLanguage" to userDto.preferredLanguage,
+            "appTheme" to userDto.appTheme,
+
+            // Subscription info
+            "subscriptionTier" to userDto.subscriptionTier,
+            "subscriptionStatus" to userDto.subscriptionStatus,
+            "subscriptionExpiryDate" to userDto.subscriptionExpiryDate
+        )
     }
 }

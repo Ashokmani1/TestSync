@@ -1,71 +1,57 @@
 package com.teksxt.closedtesting.myrequest.data.local.dao
 
-import androidx.room.*
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Update
 import com.teksxt.closedtesting.myrequest.data.local.entity.RequestEntity
-import com.teksxt.closedtesting.myrequest.domain.model.Request
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.map
 
 @Dao
 interface RequestDao {
-    @Query("SELECT * FROM requests ORDER BY createdAt DESC")
-    fun getAllRequestsEntities(): Flow<List<RequestEntity>>
-
-    fun getAllRequests(): Flow<List<Request>> =
-        getAllRequestsEntities().map { entities ->
-            entities.map { it.toDomainModel() }
-        }
-
-    @Query("SELECT * FROM requests WHERE id = :requestId")
-    fun getRequestEntityById(requestId: String): Flow<RequestEntity?>
-
-    fun getRequestById(requestId: String): Flow<Request?> =
-        getRequestEntityById(requestId).map { entity ->
-            entity?.toDomainModel()
-        }
-
-    @Query("SELECT * FROM requests WHERE id = :requestId")
-    suspend fun getRequestEntityByIdSync(requestId: String): RequestEntity?
-
-    suspend fun getRequestByIdSync(requestId: String): Request? =
-        getRequestEntityByIdSync(requestId)?.toDomainModel()
-
-    @Query("SELECT * FROM requests WHERE createdBy = :userId ORDER BY createdAt DESC")
-    fun getRequestEntitiesByUser(userId: String): Flow<List<RequestEntity>>
-
-    fun getRequestsByUser(userId: String): Flow<List<Request>> =
-        getRequestEntitiesByUser(userId).map { entities ->
-            entities.map { it.toDomainModel() }
-        }
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertRequest(request: RequestEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertRequestEntity(requestEntity: RequestEntity)
-
-    suspend fun insertRequest(request: Request) {
-        insertRequestEntity(RequestEntity.fromDomainModel(request))
-    }
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertRequestEntities(requestEntities: List<RequestEntity>)
-
-    suspend fun insertRequests(requests: List<Request>) {
-        insertRequestEntities(requests.map { RequestEntity.fromDomainModel(it) })
-    }
+    suspend fun insertRequests(requests: List<RequestEntity>)
 
     @Update
-    suspend fun updateRequestEntity(requestEntity: RequestEntity)
+    suspend fun updateRequest(request: RequestEntity)
 
-    suspend fun updateRequest(request: Request) {
-        updateRequestEntity(RequestEntity.fromDomainModel(request))
-    }
+    @Query("SELECT * FROM requests WHERE requestId = :requestId")
+    suspend fun getRequestById(requestId: String): RequestEntity?
 
-    @Delete
-    suspend fun deleteRequestEntity(requestEntity: RequestEntity)
+    @Query("SELECT * FROM requests WHERE appId = :appId")
+    suspend fun getRequestByAppId(appId: String): RequestEntity?
 
-    suspend fun deleteRequest(request: Request) {
-        deleteRequestEntity(RequestEntity.fromDomainModel(request))
-    }
+    @Query("SELECT * FROM requests WHERE requestId = :requestId")
+    fun getRequestByIdFlow(requestId: String): Flow<RequestEntity?>
 
-    @Query("DELETE FROM requests")
-    suspend fun clearAllRequests()
+    @Query("SELECT * FROM requests WHERE ownerUserId = :userId ORDER BY isPinned DESC, updatedAt DESC")
+    suspend fun getRequestsByOwnerId(userId: String): List<RequestEntity>
+
+    @Query("SELECT * FROM requests WHERE ownerUserId = :userId ORDER BY isPinned DESC, updatedAt DESC")
+    fun getRequestsByOwnerIdFlow(userId: String): Flow<List<RequestEntity>>
+
+    @Query("SELECT * FROM requests WHERE status IN (:statuses) ORDER BY updatedAt DESC")
+    suspend fun getRequestsByStatus(statuses: List<String>): List<RequestEntity>
+
+    @Query("UPDATE requests SET status = :status, updatedAt = :updatedAt, lastSyncedAt = :lastSyncedAt, isModifiedLocally = 1 WHERE requestId = :requestId")
+    suspend fun updateRequestStatus(requestId: String, status: String, updatedAt: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE requests SET isPinned = :isPinned, updatedAt = :updatedAt, lastSyncedAt = :lastSyncedAt, isModifiedLocally = 1 WHERE requestId = :requestId")
+    suspend fun updatePinnedStatus(requestId: String, isPinned: Boolean, updatedAt: Long, lastSyncedAt: Long)
+
+    @Query("UPDATE requests SET lastSyncedAt = :syncTime, isModifiedLocally = :isModified WHERE requestId = :requestId")
+    suspend fun updateSyncStatus(requestId: String, syncTime: Long, isModified: Boolean)
+
+    @Query("DELETE FROM requests WHERE requestId = :requestId")
+    suspend fun deleteRequest(requestId: String)
+
+    @Query("SELECT * FROM requests WHERE isModifiedLocally = 1")
+    suspend fun getModifiedRequests(): List<RequestEntity>
+
+    @Query("SELECT * FROM requests WHERE :currentTime BETWEEN startDate AND endDate")
+    suspend fun getActiveRequests(currentTime: Long): List<RequestEntity>
 }

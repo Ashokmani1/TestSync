@@ -1,95 +1,95 @@
-package com.teksxt.closedtesting.data.auth
+package com.teksxt.closedtesting.presentation.auth
 
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.teksxt.closedtesting.data.preferences.UserPreferencesManager
-import com.teksxt.closedtesting.domain.model.UserModel
+import com.teksxt.closedtesting.settings.domain.model.User
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
+import com.teksxt.closedtesting.util.Resource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration.Companion.minutes
 
 @Singleton
 class SessionManager @Inject constructor(
     private val auth: FirebaseAuth,
-    private val userPrefsManager: UserPreferencesManager
+    private val preferencesManager: UserPreferencesManager,
+    private val userRepository: UserRepository,
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO)
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    val isUserLoggedIn: Boolean
+        get() = auth.currentUser != null
 
-    private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
-    val authState: StateFlow<AuthState> = _authState.asStateFlow()
+    val currentFirebaseUser: FirebaseUser?
+        get() = auth.currentUser
 
-    // Expose user preferences
-    val isLoggedIn: Flow<Boolean> = userPrefsManager.isLoggedIn
-    val userEmail: Flow<String?> = userPrefsManager.userEmail
+    val currentUserId: String?
+        get() = (auth.currentUser?.uid ?: preferencesManager.userId).toString()
 
-    init {
-        // Initialize session state from Firebase Auth
-        auth.addAuthStateListener { firebaseAuth ->
-            scope.launch {
-                val user = firebaseAuth.currentUser
-                if (user != null) {
-                    refreshIdToken(user)
-                    userPrefsManager.saveUserId(user.uid)
-                    userPrefsManager.saveUserEmail(user.email)
-                    userPrefsManager.setLoggedIn(true)
-                    _authState.value = AuthState.Authenticated(user.toUserModel())
-                } else {
-                    userPrefsManager.clearUserData()
-                    _authState.value = AuthState.Unauthenticated
-                }
+    private var updateLastActiveJob: Job? = null
+
+    fun startTrackingUserActivity()
+    {
+        updateLastActiveJob?.cancel()
+        updateLastActiveJob = scope.launch {
+            while (isActive) {
+                userRepository.updateUserLastActive()
+                delay(5.minutes) // Update every 5 minutes
             }
         }
     }
 
-    suspend fun refreshSession(): Boolean {
-        val currentUser = auth.currentUser ?: return false
-        return try {
-            currentUser.reload().await()
-            refreshIdToken(currentUser)
-            _authState.value = AuthState.Authenticated(currentUser.toUserModel())
-            true
-        } catch (e: Exception) {
-            _authState.value = AuthState.Error(e.message ?: "Failed to refresh session")
-            false
+    fun stopTrackingUserActivity()
+    {
+        updateLastActiveJob?.cancel()
+        updateLastActiveJob = null
+    }
+
+    suspend fun getCurrentUserProfile(): User? {
+        val userId = currentUserId ?: return null
+        return userRepository.getUserById(userId).getOrNull()
+    }
+
+    fun getUserProfileFlow(): Flow<Resource<User>>
+    {
+        val userId = currentUserId ?: return flow {
+            emit(Resource.Error("No user logged in"))
         }
+
+        return userRepository.getCurrentUser()
     }
 
-    private suspend fun refreshIdToken(user: FirebaseUser) {
-        try {
-            // Get fresh ID token for API calls
-            val token = user.getIdToken(true).await().token
-            userPrefsManager.saveAuthToken(token)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+    /**
+     * Check if the user is logged in and their profile is set up
+     */
+    suspend fun isUserOnboarded(): Boolean
+    {
+        val userId = currentUserId ?: return false
+        val user = userRepository.getUserById(userId).getOrNull() ?: return false
+        return user.isOnboarded == true
     }
 
-    suspend fun signOut() {
-        auth.signOut()
-        userPrefsManager.clearUserData()
-        _authState.value = AuthState.Unauthenticated
+    /**
+     * Mark user as having completed onboarding
+     */
+    suspend fun completeOnboarding(): Result<Unit>
+    {
+        val userId = currentUserId ?: return Result.failure(Exception("No user logged in"))
+        return userRepository.updateUserOnboardingStatus(userId, true)
     }
 
-    private fun FirebaseUser.toUserModel() = UserModel(
-        uid = uid,
-        email = email ?: "",
-        displayName = displayName,
-        photoUrl = photoUrl?.toString(),
-        isEmailVerified = isEmailVerified
-    )
-}
-
-sealed class AuthState {
-    object Loading : AuthState()
-    data class Authenticated(val user: UserModel) : AuthState()
-    object Unauthenticated : AuthState()
-    data class Error(val message: String) : AuthState()
+    /**
+     * Refreshes the user data from remote source
+     */
+    suspend fun refreshUserData() {
+        userRepository.syncUserData()
+    }
 }

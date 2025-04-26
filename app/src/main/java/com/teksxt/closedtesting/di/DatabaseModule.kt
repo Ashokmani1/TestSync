@@ -2,13 +2,12 @@ package com.teksxt.closedtesting.di
 
 import android.content.Context
 import androidx.room.Room
-import com.teksxt.closedtesting.assignedtests.data.local.dao.TestDao
 import com.teksxt.closedtesting.data.local.TestSyncDatabase
 import com.teksxt.closedtesting.myrequest.data.local.dao.AssignedTesterDao
 import com.teksxt.closedtesting.myrequest.data.local.dao.RequestDao
-import com.teksxt.closedtesting.myrequest.data.local.dao.TestDetailsDao
 import com.teksxt.closedtesting.data.local.dao.UserDao
 import com.teksxt.closedtesting.explore.data.local.dao.AppDao
+import com.teksxt.closedtesting.picked.data.local.dao.PickedAppDao
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -48,20 +47,15 @@ object DatabaseModule {
     }
 
     @Provides
-    fun provideTestDetailsDao(database: TestSyncDatabase): TestDetailsDao
-    {
-        return database.testDetailsDao()
-    }
-
-    @Provides
     fun provideAppDao(database: TestSyncDatabase): AppDao
     {
         return database.appDao()
     }
 
     @Provides
-    fun provideTestDao(database: TestSyncDatabase): TestDao
+    @Singleton
+    fun providePickedAppDao(db: TestSyncDatabase): PickedAppDao
     {
-        return database.testDao()
+        return db.pickedAppDao()
     }
 }

@@ -8,6 +8,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -23,10 +24,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.teksxt.closedtesting.R
@@ -35,6 +40,8 @@ import com.teksxt.closedtesting.R
 fun SignupScreen(
     onNavigateToLogin: () -> Unit,
     onSignupSuccess: () -> Unit,
+    onNavigateToTerms: () -> Unit,
+    onNavigateToPrivacy: () -> Unit,
     viewModel: SignupViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -170,25 +177,95 @@ fun SignupScreen(
             )
 
             // Terms and Conditions with better styling
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp)
             ) {
-                Checkbox(
-                    checked = uiState.termsAccepted,
-                    onCheckedChange = { viewModel.updateTermsAccepted(it) },
-                    colors = CheckboxDefaults.colors(
-                        checkedColor = MaterialTheme.colorScheme.primary
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(end = 8.dp)
+                ) {
+                    Checkbox(
+                        checked = uiState.termsAccepted,
+                        onCheckedChange = { viewModel.updateTermsAccepted(it) },
+                        colors = CheckboxDefaults.colors(
+                            checkedColor = MaterialTheme.colorScheme.primary
+                        )
                     )
-                )
 
-                Text(
-                    "I agree to the Terms of Service and Privacy Policy",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                    val annotatedText = buildAnnotatedString {
+                        append("I agree to the ")
+
+                        // Add Terms of Service with annotation and styling
+                        pushStringAnnotation(tag = "TERMS", annotation = "terms_click")
+                        withStyle(
+                            style = SpanStyle(
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        ) {
+                            append("Terms of Service")
+                        }
+                        pop() // End terms annotation
+
+                        append(" and ")
+
+                        // Add Privacy Policy with annotation and styling
+                        pushStringAnnotation(tag = "PRIVACY", annotation = "privacy_click")
+                        withStyle(
+                            style = SpanStyle(
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        ) {
+                            append("Privacy Policy")
+                        }
+                        pop() // End privacy annotation
+                    }
+
+                    // Use ClickableText instead of regular Text
+                    ClickableText(
+                        text = annotatedText,
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = MaterialTheme.colorScheme.onSurface
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(end = 16.dp),
+                        onClick = { offset ->
+                            // Find which annotation was clicked
+                            annotatedText.getStringAnnotations(
+                                tag = "TERMS",
+                                start = offset,
+                                end = offset
+                            ).firstOrNull()?.let {
+                                // Terms of Service was clicked
+                                onNavigateToTerms()
+                            }
+
+                            annotatedText.getStringAnnotations(
+                                tag = "PRIVACY",
+                                start = offset,
+                                end = offset
+                            ).firstOrNull()?.let {
+                                // Privacy Policy was clicked
+                                onNavigateToPrivacy()
+                            }
+                        }
+                    )
+                }
+
+                if (uiState.termsError != null) {
+                    Text(
+                        text = uiState.termsError!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 16.dp, top = 4.dp)
+                    )
+                }
             }
 
             if (uiState.termsError != null) {
@@ -202,10 +279,14 @@ fun SignupScreen(
 
             Spacer(modifier = Modifier.height(12.dp))
 
+            val fieldsValid = !uiState.isLoading && uiState.name.isNotBlank() &&
+                    uiState.email.isNotBlank() &&
+                    uiState.password.isNotBlank() &&
+                    uiState.termsAccepted
             // Modern Signup Button with elevation
             ElevatedButton(
                 onClick = { viewModel.signup() },
-                enabled = !uiState.isLoading,
+                enabled = fieldsValid,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()

@@ -3,27 +3,23 @@ package com.teksxt.closedtesting.di
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.storage.FirebaseStorage
-import com.teksxt.closedtesting.data.auth.GoogleSignInHelper
-import com.teksxt.closedtesting.data.auth.SessionManager
+import com.teksxt.closedtesting.data.local.dao.UserDao
+import com.teksxt.closedtesting.presentation.auth.SessionManager
 import com.teksxt.closedtesting.myrequest.data.local.dao.AssignedTesterDao
 import com.teksxt.closedtesting.myrequest.data.local.dao.RequestDao
-import com.teksxt.closedtesting.myrequest.data.local.dao.TestDetailsDao
 import com.teksxt.closedtesting.data.preferences.UserPreferences
 import com.teksxt.closedtesting.data.preferences.UserPreferencesManager
-import com.teksxt.closedtesting.data.remote.FirestoreService
-import com.teksxt.closedtesting.data.repository.AuthRepositoryImpl
 import com.teksxt.closedtesting.myrequest.data.repo.RequestRepositoryImpl
 import com.teksxt.closedtesting.data.repository.SubscriptionRepositoryImpl
 import com.teksxt.closedtesting.data.repository.UserRepositoryImpl
-import com.teksxt.closedtesting.domain.repository.AuthRepository
 import com.teksxt.closedtesting.myrequest.domain.repo.RequestRepository
 import com.teksxt.closedtesting.domain.repository.SubscriptionRepository
-import com.teksxt.closedtesting.profile.domain.repo.UserRepository
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
 import com.teksxt.closedtesting.explore.data.local.dao.AppDao
 import com.teksxt.closedtesting.explore.data.repo.AppRepositoryImpl
 import com.teksxt.closedtesting.explore.domain.repo.AppRepository
-import com.teksxt.closedtesting.service.AuthService
 import com.teksxt.closedtesting.service.NotificationService
 import dagger.Module
 import dagger.Provides
@@ -56,6 +52,12 @@ object AppModule {
 
     @Provides
     @Singleton
+    fun provideFirebaseMessaging(): FirebaseMessaging {
+        return FirebaseMessaging.getInstance()
+    }
+
+    @Provides
+    @Singleton
     fun provideNotificationService(
         firestore: FirebaseFirestore
     ): NotificationService {
@@ -72,13 +74,13 @@ object AppModule {
     @Provides
     @Singleton
     fun provideUserRepository(
-        firestore: FirestoreService,
-        storage: FirebaseAuth,
-        auth: AuthService,
-        userPreferences: UserPreferences
+        firestore: FirebaseFirestore,
+        storage: FirebaseStorage,
+        auth: FirebaseAuth,
+        userDao: UserDao
     ): UserRepository
     {
-        return UserRepositoryImpl(firestore, auth, storage, userPreferences)
+        return UserRepositoryImpl(firestore, storage, auth, userDao)
     }
 
     @Provides
@@ -95,25 +97,22 @@ object AppModule {
     fun provideRequestRepository(
         requestDao: RequestDao,
         assignedTesterDao: AssignedTesterDao,
-        testDetailsDao: TestDetailsDao,
         firestore: FirebaseFirestore,
         auth: FirebaseAuth,
-        notificationService: NotificationService,
-        appDao: AppDao // Add AppDao parameter
     ): RequestRepository
     {
-        return RequestRepositoryImpl(requestDao, assignedTesterDao, testDetailsDao, firestore, auth, notificationService, appDao)
+        return RequestRepositoryImpl(firestore, auth, requestDao, assignedTesterDao)
     }
 
     @Provides
     @Singleton
     fun provideAppRepository(
         firestore: FirebaseFirestore,
+        storage: FirebaseStorage,
         appDao: AppDao,
-        auth: FirebaseAuth
     ): AppRepository
     {
-        return AppRepositoryImpl(firestore, appDao, auth)
+        return AppRepositoryImpl(firestore, storage, appDao)
     }
 
     @Provides
@@ -128,8 +127,9 @@ object AppModule {
     @Singleton
     fun provideSessionManager(
         auth: FirebaseAuth,
-        preferencesManager: UserPreferencesManager
+        preferencesManager: UserPreferencesManager,
+        userRepository: UserRepository
     ): SessionManager {
-        return SessionManager(auth, preferencesManager)
+        return SessionManager(auth, preferencesManager, userRepository)
     }
 }

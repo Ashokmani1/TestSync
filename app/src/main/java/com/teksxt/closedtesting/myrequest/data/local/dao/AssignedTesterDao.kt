@@ -14,4 +14,7 @@ interface AssignedTesterDao
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAssignedTesters(testers: List<AssignedTesterEntity>)
+
+    @Query("SELECT * FROM assigned_testers WHERE id = :id")
+    suspend fun getAssignedTesterById(id: String): AssignedTesterEntity?
 }

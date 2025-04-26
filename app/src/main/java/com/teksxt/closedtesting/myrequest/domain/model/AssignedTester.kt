@@ -16,5 +16,6 @@ data class AssignedTester(
 enum class TestingStatus {
     PENDING,
     IN_PROGRESS,
+    OVERDUE,
     COMPLETED
 }

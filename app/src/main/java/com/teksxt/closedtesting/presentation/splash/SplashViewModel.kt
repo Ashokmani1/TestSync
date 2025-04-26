@@ -2,9 +2,10 @@ package com.teksxt.closedtesting.presentation.splash
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.teksxt.closedtesting.data.auth.AuthState
-import com.teksxt.closedtesting.data.auth.SessionManager
+import com.teksxt.closedtesting.presentation.auth.SessionManager
 import com.teksxt.closedtesting.data.preferences.UserPreferencesManager
+import com.teksxt.closedtesting.service.FCMTokenManager
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,8 +28,8 @@ sealed class SplashNavigationEvent {
 
 @HiltViewModel
 class SplashViewModel @Inject constructor(
-    private val sessionManager: SessionManager,
-    private val preferencesManager: UserPreferencesManager
+    private val userRepository: UserRepository,
+    private val sessionManager: SessionManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SplashUiState())
@@ -41,42 +42,49 @@ class SplashViewModel @Inject constructor(
     private fun checkAuthenticationState() {
         viewModelScope.launch {
             try {
-                when (sessionManager.authState.value) {
-                    is AuthState.Authenticated -> {
-                        // Check if onboarding is completed
-                        val onboardingCompleted = preferencesManager.onboardingCompleted.first()
-                        if (onboardingCompleted) {
-                            _uiState.update {
-                                it.copy(navigationEvent = SplashNavigationEvent.NavigateToHome)
-                            }
-                        } else {
-                            _uiState.update {
-                                it.copy(navigationEvent = SplashNavigationEvent.NavigateToOnboarding)
-                            }
-                        }
+                // First check if user is logged in
+                if (sessionManager.isUserLoggedIn) {
+                    // Try to refresh user data silently
+
+                    sessionManager.startTrackingUserActivity()
+
+                    try {
+                        sessionManager.refreshUserData()
+                    } catch (e: Exception) {
+                        // If refresh fails, continue with locally cached data
                     }
-                    is AuthState.Unauthenticated -> {
-                        _uiState.update {
-                            it.copy(navigationEvent = SplashNavigationEvent.NavigateToLogin)
-                        }
-                    }
-                    is AuthState.Loading -> {
-                        // Wait for the auth state to stabilize
-                        // This will be handled in a subsequent collectLatest block
-                    }
-                    is AuthState.Error -> {
-                        val error = (sessionManager.authState.value as AuthState.Error).message
+
+                    // Check if onboarding is completed
+                    val onboardingCompleted = sessionManager.isUserOnboarded()
+
+                    if (onboardingCompleted) {
                         _uiState.update {
                             it.copy(
-                                error = "Authentication error: $error",
-                                navigationEvent = SplashNavigationEvent.NavigateToLogin
+                                isLoading = false,
+                                navigationEvent = SplashNavigationEvent.NavigateToHome
                             )
                         }
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isLoading = false,
+                                navigationEvent = SplashNavigationEvent.NavigateToOnboarding
+                            )
+                        }
+                    }
+                } else {
+                    // User is not logged in
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            navigationEvent = SplashNavigationEvent.NavigateToLogin
+                        )
                     }
                 }
             } catch (e: Exception) {
                 _uiState.update {
                     it.copy(
+                        isLoading = false,
                         error = "Error checking authentication: ${e.message}",
                         navigationEvent = SplashNavigationEvent.NavigateToLogin
                     )

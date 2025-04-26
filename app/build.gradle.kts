@@ -13,12 +13,13 @@ android {
 
     defaultConfig {
         applicationId = "com.teksxt.closedtesting"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables.useSupportLibrary = true
     }
 
     buildTypes {
@@ -36,6 +37,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -88,4 +90,6 @@ dependencies {
     implementation("org.jsoup:jsoup:1.15.4")
 
     implementation("androidx.datastore:datastore-preferences:1.1.4")
+
+    implementation("com.airbnb.android:lottie-compose:6.6.6")
 }

@@ -4,9 +4,11 @@ import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.teksxt.closedtesting.data.auth.GoogleSignInHelper
 import com.teksxt.closedtesting.data.preferences.UserPreferences
-import com.teksxt.closedtesting.data.remote.FirestoreService
 import com.teksxt.closedtesting.data.repository.AuthRepositoryImpl
 import com.teksxt.closedtesting.domain.repository.AuthRepository
+import com.teksxt.closedtesting.presentation.auth.SessionManager
+import com.teksxt.closedtesting.service.FCMTokenManager
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -30,10 +32,12 @@ object AuthModule {
     @Singleton
     fun provideAuthRepository(
         firebaseAuth: FirebaseAuth,
-        firestoreService: FirestoreService,
         userPreferences: UserPreferences,
-        googleSignInHelper: GoogleSignInHelper
+        googleSignInHelper: GoogleSignInHelper,
+        userRepository: UserRepository,
+        fcmTokenManager: FCMTokenManager,
+        sessionManager: SessionManager
     ): AuthRepository {
-        return AuthRepositoryImpl(firebaseAuth, firestoreService, userPreferences, googleSignInHelper)
+        return AuthRepositoryImpl(firebaseAuth, userPreferences, googleSignInHelper, userRepository, fcmTokenManager, sessionManager)
     }
 }

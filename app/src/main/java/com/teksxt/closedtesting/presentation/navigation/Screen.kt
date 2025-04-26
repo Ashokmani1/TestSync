@@ -14,9 +14,7 @@ sealed class Screen(val route: String) {
     // My Requests
     data object MyRequests : Screen("my_requests")
     data object CreateRequest : Screen("create_request")
-    data object RequestDetails : Screen("request_details/{requestId}") {
-        fun createRoute(requestId: String) = "request_details/$requestId"
-    }
+    data object RequestDetails : Screen("request_details")
     data object RequestReports : Screen("request_reports")
     
     // Assigned Tests

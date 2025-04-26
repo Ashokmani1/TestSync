@@ -35,7 +35,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.teksxt.closedtesting.R
-import com.teksxt.closedtesting.ui.theme.ButtonShape
 
 @Composable
 fun LoginScreen(
@@ -182,7 +181,7 @@ fun LoginScreen(
             // Modern Login Button with elevation and better shape
             ElevatedButton(
                 onClick = { viewModel.login() },
-                enabled = !uiState.isLoading,
+                enabled = !uiState.isLoading && uiState.email.isNotEmpty() && uiState.password.isNotEmpty(),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()

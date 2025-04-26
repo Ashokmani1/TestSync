@@ -2,10 +2,9 @@ package com.teksxt.closedtesting.di
 
 import com.teksxt.closedtesting.domain.repository.*
 import com.teksxt.closedtesting.domain.usecase.auth.*
-import com.teksxt.closedtesting.domain.usecase.profile.*
 import com.teksxt.closedtesting.domain.usecase.subscription.*
 import com.teksxt.closedtesting.domain.usecase.validation.*
-import com.teksxt.closedtesting.profile.domain.repo.UserRepository
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -71,21 +70,6 @@ object UseCaseModule {
     fun provideValidateUrlUseCase(): ValidateUrlUseCase {
         return ValidateUrlUseCase()
     }
-
-
-    // Profile Use Cases
-    @Provides
-    @Singleton
-    fun provideGetUserProfileUseCase(userRepository: UserRepository): GetUserProfileUseCase {
-        return GetUserProfileUseCase(userRepository)
-    }
-
-    @Provides
-    @Singleton
-    fun provideUpdateUserProfileUseCase(userRepository: UserRepository): UpdateUserProfileUseCase {
-        return UpdateUserProfileUseCase(userRepository)
-    }
-
 
 
     // Subscription Use Cases

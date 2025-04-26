@@ -4,31 +4,49 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import com.teksxt.closedtesting.explore.data.local.entity.AppEntity
-import com.teksxt.closedtesting.explore.data.local.entity.PickedAppEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface AppDao {
-    @Query("SELECT * FROM apps ORDER BY lastUpdated DESC")
-    fun getAllApps(): Flow<List<AppEntity>>
-
-    @Query("SELECT appId FROM picked_apps")
-    fun getPickedApps(): Flow<List<String>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertApp(app: AppEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertApps(apps: List<AppEntity>)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertPickedApp(pickedApp: PickedAppEntity)
-
-    @Query("SELECT EXISTS(SELECT 1 FROM picked_apps WHERE appId = :appId)")
-    suspend fun isAppPicked(appId: String): Boolean
-
-    @Query("SELECT * FROM apps WHERE id = :appId")
-    fun getAppById(appId: String): Flow<AppEntity?>
-
     @Update
     suspend fun updateApp(app: AppEntity)
+
+    @Query("SELECT * FROM apps WHERE appId = :appId")
+    suspend fun getAppById(appId: String): AppEntity?
+
+    @Query("SELECT * FROM apps WHERE appId = :appId")
+    fun getAppByIdFlow(appId: String): Flow<AppEntity?>
+
+    @Query("SELECT * FROM apps WHERE ownerUserId = :userId")
+    suspend fun getAppsByOwnerId(userId: String): List<AppEntity>
+
+    @Query("SELECT * FROM apps WHERE ownerUserId = :userId")
+    fun getAppsByOwnerIdFlow(userId: String): Flow<List<AppEntity>>
+
+    @Query("SELECT * FROM apps WHERE status IN (:statuses)")
+    suspend fun getAppsByStatus(statuses: List<String>): List<AppEntity>
+
+    @Query("SELECT * FROM apps")
+    fun getAllAppsFlow(): Flow<List<AppEntity>>
+
+    @Query("UPDATE apps SET lastSyncedAt = :syncTime, isModifiedLocally = :isModified WHERE appId = :appId")
+    suspend fun updateSyncStatus(appId: String, syncTime: Long, isModified: Boolean)
+
+    @Query("DELETE FROM apps WHERE appId = :appId")
+    suspend fun deleteApp(appId: String)
+
+    @Query("SELECT * FROM apps WHERE categoryId = :categoryId")
+    suspend fun getAppsByCategory(categoryId: String): List<AppEntity>
+
+    @Query("SELECT * FROM apps WHERE isModifiedLocally = 1")
+    suspend fun getModifiedApps(): List<AppEntity>
 }

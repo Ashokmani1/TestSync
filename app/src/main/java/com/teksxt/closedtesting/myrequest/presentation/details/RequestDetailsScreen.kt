@@ -2,45 +2,77 @@ package com.teksxt.closedtesting.myrequest.presentation.details
 
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material.icons.rounded.CheckCircle
-import androidx.compose.material.icons.rounded.Error
-import androidx.compose.material.icons.rounded.RunCircle
-import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBarScrollBehavior
+import androidx.compose.material3.surfaceColorAtElevation
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
 import com.teksxt.closedtesting.myrequest.domain.model.Request
-import com.teksxt.closedtesting.myrequest.presentation.details.component.DayDetailsCard
+import com.teksxt.closedtesting.myrequest.presentation.details.component.AppHeaderCard
+import com.teksxt.closedtesting.myrequest.presentation.details.component.ModernTestingDaysAndTesterSection
+import com.teksxt.closedtesting.myrequest.presentation.details.component.QuickActionButtons
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
+import androidx.core.net.toUri
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun RequestDetailsScreen(
     onNavigateBack: () -> Unit,
@@ -48,103 +80,274 @@ fun RequestDetailsScreen(
     viewModel: RequestDetailsViewModel = hiltViewModel()
 ) {
     val request by viewModel.request.collectAsState()
+    val appDetails by viewModel.appDetails.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
     val selectedDay by viewModel.selectedDay.collectAsState()
     val progress by viewModel.progress.collectAsState()
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
-    val scrollState = rememberScrollState()
+    var showDeleteDialog by remember { mutableStateOf(false) }
+
+    // Scroll state
+    val scrollState = rememberLazyListState()
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
+
+    // Calculate animated progress
+    val animatedProgress by animateFloatAsState(
+        targetValue = progress,
+        animationSpec = tween(1000)
+    )
+
+    LaunchedEffect(Unit) {
+        viewModel.scrollToPosition.collectLatest { position ->
+            // Scroll to the specified position with animation
+            scrollState.animateScrollToItem(position)
+        }
+    }
 
     // Handle events
     LaunchedEffect(Unit) {
         viewModel.errorMessage.collectLatest { errorMessage ->
-            snackbarHostState.showSnackbar(
-                message = errorMessage,
-                duration = SnackbarDuration.Short
-            )
+            snackbarHostState.showSnackbar(message = errorMessage, duration = SnackbarDuration.Short)
         }
     }
 
-    Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        text = request?.appName ?: "Request Details",
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(
-                            Icons.Default.ArrowBack,
-                            contentDescription = "Back"
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.largeTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    scrolledContainerColor = MaterialTheme.colorScheme.surface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                actions = {
-                    IconButton(onClick = { viewModel.refreshData() }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh"
-                        )
-                    }
+    LaunchedEffect(Unit) {
+        viewModel.snackbarMessage.collectLatest { message ->
+            snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Short)
+        }
+    }
+
+    // Handle navigation events (NEW)
+    LaunchedEffect(Unit) {
+        viewModel.navigationEvent.collectLatest { navigationEvent ->
+            when (navigationEvent) {
+                is NavigationEvent.NavigateBack -> {
+                    onNavigateBack()
                 }
+                is NavigationEvent.NavigateToEditRequest -> {
+                    navController.navigate("edit_request/${navigationEvent.requestId}")
+                }
+            }
+        }
+    }
+
+    // Delete dialog
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Delete Request") },
+            text = { Text("Are you sure you want to delete this request? This action cannot be undone.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteDialog = false
+                        viewModel.deleteRequest()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    Scaffold(
+        modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
+        topBar = {
+            AppDetailsTopBar(
+                title = request?.title ?: "",
+                onBackClick = onNavigateBack,
+                onEditClick = { viewModel.editRequest() },
+                onDeleteClick = { showDeleteDialog = true },
+                onShareClick = { viewModel.shareAppDetails(context) },
+                scrollBehavior = scrollBehavior
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
+        contentWindowInsets = WindowInsets.navigationBars
+    ) { paddingValues ->
+        if (isLoading && request == null) {
+            LoadingContent(modifier = Modifier.padding(paddingValues))
+        } else if (request != null) {
+            MainContent(
+                viewModel = viewModel,
+                request = request!!,
+                selectedDay = selectedDay,
+                progress = animatedProgress,
+                scrollState = scrollState,
+                onDaySelected = viewModel::setSelectedDay,
+                onViewPlayStore = {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, "https://play.google.com/store/apps/details?id=${request!!.appId}".toUri())
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Couldn't open Play Store", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onGoogleGroupUrlClick = {
+                   try {
+                       val intent = Intent(Intent.ACTION_VIEW, appDetails?.googleGroupUrl?.toUri())
+                       context.startActivity(intent)
+                   } catch (e: Exception) {
+                       Toast.makeText(context, "Couldn't open Play Store", Toast.LENGTH_SHORT).show()
+                   }
+                },
+                onViewTesters = {
+                    if ((request?.testingDays ?: 0) > 0) {
+                        // Scroll to testers section (index 2, after app card and buttons)
+                        viewModel.scrollToTesters()
+
+                    } else {
+                        // Show a message if there are no testing days configured
+                        Toast.makeText(context, "No testers available for this request", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                navController = navController,
+                modifier = Modifier.padding(paddingValues)
+            )
+        } else {
+            ErrorContent(
+                onRetry = { viewModel.refreshData() },
+                modifier = Modifier.padding(paddingValues)
             )
         }
-    ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            if (isLoading && request == null) {
-                LoadingState()
-            } else if (request != null) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .verticalScroll(scrollState)
-                ) {
-                    // Status Badge & Progress
-                    StatusAndProgressSection(request = request!!, progress = progress)
+    }
+}
 
-                    // Quick Info & Links
-                    QuickInfoSection(request = request!!,
-                        onTesterClick = {
-                            navController.navigate("assigned_users/all/${request?.id}")
-                        }
-                    )
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppDetailsTopBar(
+    title: String,
+    onBackClick: () -> Unit,
+    onEditClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    onShareClick: () -> Unit,
+    scrollBehavior: TopAppBarScrollBehavior
+) {
+    TopAppBar(
+        title = {
+            Text(
+                text = title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                style = MaterialTheme.typography.titleMedium
+            )
+        },
+        navigationIcon = {
+            IconButton(onClick = onBackClick) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+            }
+        },
+        actions = {
+            var showMenu by remember { mutableStateOf(false) }
 
-                    // Description
-                    DescriptionSection(description = request!!.description)
+            IconButton(onClick = { showMenu = true }) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More options")
+            }
 
-                    // Day Selection Tabs
-                    DaySelectionSection(
-                        navController = navController,
-                        viewModel = viewModel,
-                        requestId = request!!.id,
-                        durationInDays = request!!.durationInDays,
-                        selectedDay = selectedDay,
-                        onDaySelected = { viewModel.setSelectedDay(it) },
-                        progress = progress
-                    )
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Edit Request") },
+                    leadingIcon = { Icon(Icons.Default.Edit, null) },
+                    onClick = {
+                        showMenu = false
+                        onEditClick()
+                    }
+                )
 
+                DropdownMenuItem(
+                    text = { Text("Share Request") },
+                    leadingIcon = { Icon(Icons.Default.Share, null) },
+                    onClick = {
+                        showMenu = false
+                        onShareClick()
+                    }
+                )
 
-                    Spacer(modifier = Modifier.height(32.dp))
-                }
-            } else {
-                ErrorState(
-                    message = "Request not found",
-                    onRetry = { viewModel.refreshData() }
+                DropdownMenuItem(
+                    text = { Text("Delete Request", color = MaterialTheme.colorScheme.error) },
+                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        showMenu = false
+                        onDeleteClick()
+                    }
+                )
+            }
+        },
+        scrollBehavior = scrollBehavior,
+        colors = TopAppBarDefaults.topAppBarColors(
+            containerColor = MaterialTheme.colorScheme.surface,
+            scrolledContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+        ),
+        windowInsets = WindowInsets(0, 0, 0, 0)
+    )
+}
+
+@Composable
+private fun MainContent(
+    viewModel: RequestDetailsViewModel,
+    request: Request,
+    selectedDay: Int,
+    progress: Float,
+    scrollState: LazyListState,
+    onDaySelected: (Int) -> Unit,
+    onViewPlayStore: () -> Unit,
+    onViewTesters: () -> Unit,
+    onGoogleGroupUrlClick: () -> Unit,
+    navController: NavController,
+    modifier: Modifier = Modifier
+) {
+    LazyColumn(
+        state = scrollState,
+        modifier = modifier.fillMaxSize(),
+        contentPadding = PaddingValues(bottom = 16.dp)
+    ) {
+        item {
+            // App details card
+            AppHeaderCard(
+                request = request,
+                progress = progress,
+                modifier = Modifier.padding(16.dp)
+            )
+        }
+
+        item {
+            // Quick action buttons
+            QuickActionButtons(
+                onPlayStoreClick = onViewPlayStore,
+                onTestersClick = onViewTesters,
+                onGoogleGroupUrlClick = onGoogleGroupUrlClick,
+                testingDays = request.testingDays,
+                testerCount = "${request.currentTestersCount}",
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+        }
+
+        // Only show testing days section if there are testing days
+        if (request.testingDays > 0) {
+
+            item {
+                ModernTestingDaysAndTesterSection(
+                    viewModel = viewModel,
+                    request = request,
+                    selectedDay = selectedDay,
+                    onDaySelected = onDaySelected,
+                    navController = navController,
+                    onSendBulkReminder = { dayNumber ->
+                        viewModel.sendBulkReminders(selectedDay)
+                    },
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                 )
             }
         }
@@ -152,39 +355,48 @@ fun RequestDetailsScreen(
 }
 
 @Composable
-fun LoadingState() {
+private fun LoadingContent(modifier: Modifier = Modifier) {
     Box(
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize(),
         contentAlignment = Alignment.Center
     ) {
-        CircularProgressIndicator(
-            modifier = Modifier.size(48.dp),
-            strokeWidth = 4.dp
-        )
+        CircularProgressIndicator()
     }
 }
 
 @Composable
-fun ErrorState(message: String, onRetry: () -> Unit) {
+private fun ErrorContent(
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Icon(
-            imageVector = Icons.Outlined.ErrorOutline,
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-            tint = MaterialTheme.colorScheme.error
+            imageVector = Icons.Default.Error,
+            contentDescription = "Error",
+            tint = MaterialTheme.colorScheme.error,
+            modifier = Modifier.size(64.dp)
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = message,
+            text = "Failed to load request details",
             style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = "There was a problem loading the request details. Please try again.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center
         )
 
@@ -196,616 +408,19 @@ fun ErrorState(message: String, onRetry: () -> Unit) {
                 contentDescription = null,
                 modifier = Modifier.size(18.dp)
             )
+
             Spacer(modifier = Modifier.width(8.dp))
+
             Text("Try Again")
         }
     }
 }
 
-@Composable
-fun StatusAndProgressSection(request: Request, progress: Float) {
-    val animatedProgress by animateFloatAsState(
-        targetValue = progress,
-        animationSpec = tween(1000)
-    )
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Status Badge
-                val statusColor = when (request.status.lowercase()) {
-                    "active" -> MaterialTheme.colorScheme.primary
-                    "completed" -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.error
-                }
-
-                Surface(
-                    color = statusColor,
-                    shape = RoundedCornerShape(24.dp),
-                    modifier = Modifier
-                        .padding(vertical = 4.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        val icon = when (request.status.lowercase()) {
-                            "active" -> Icons.Rounded.RunCircle
-                            "completed" -> Icons.Rounded.CheckCircle
-                            else -> Icons.Rounded.Error
-                        }
-
-                        Icon(
-                            imageVector = icon,
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp),
-                            tint = Color.White
-                        )
-
-                        Spacer(modifier = Modifier.width(6.dp))
-
-                        Text(
-                            text = request.status.capitalize(),
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Medium,
-                            color = Color.White
-                        )
-                    }
-                }
-
-                // Premium badge if applicable
-                if (request.isPremium) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
-                        shape = RoundedCornerShape(24.dp),
-                        modifier = Modifier.padding(4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Star,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Premium",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Progress Text
-            Text(
-                text = "Test Progress",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Progress Bar with percentage
-            Column {
-                LinearProgressIndicator(
-                    progress = { animatedProgress },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(CircleShape),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surface
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        text = "${(animatedProgress * 100).toInt()}% Complete",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Text(
-                        text = "${(animatedProgress * request.durationInDays).toInt()}/${request.durationInDays} Days",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun QuickInfoSection(request: Request, onTesterClick: () -> Unit)
-{
-    val context = LocalContext.current
-
-    LazyRow(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        // Play Store Link
-        item {
-            QuickInfoCard(
-                icon = Icons.Outlined.ShoppingBag,
-                title = "Play Store",
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f),
-                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                onClick = {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(request.playStoreLink))
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        // Handle error
-                    }
-                }
-            )
-        }
-
-        // Google Group Link
-        item {
-            QuickInfoCard(
-                icon = Icons.Outlined.Group,
-                title = "Google Group",
-                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.8f),
-                contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                onClick = {
-                    try {
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(request.groupLink))
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        // Handle error
-                    }
-                }
-            )
-        }
-
-        // Tester Info
-        item {
-            QuickInfoCard(
-                icon = Icons.Outlined.Person,
-                title = "${request.numberOfTesters} Testers",
-                containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.8f),
-                contentColor = MaterialTheme.colorScheme.onTertiaryContainer,
-                onClick = {
-                    onTesterClick()
-                }
-            )
-        }
-
-        // Duration Info
-        item {
-            QuickInfoCard(
-                icon = Icons.Outlined.DateRange,
-                title = "${request.durationInDays} Days",
-                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-private fun QuickInfoCard(
-    icon: ImageVector,
-    title: String,
-    containerColor: Color,
-    contentColor: Color,
-    onClick: (() -> Unit)? = null
-) {
-    val cardModifier = Modifier
-        .width(110.dp)
-        .shadow(
-            elevation = 2.dp,
-            shape = RoundedCornerShape(16.dp),
-            spotColor = contentColor.copy(alpha = 0.1f)
-        )
-
-    Surface(
-        onClick = onClick ?: {},
-        enabled = onClick != null,
-        shape = RoundedCornerShape(16.dp),
-        color = containerColor,
-        contentColor = contentColor,
-        modifier = cardModifier
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(vertical = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                modifier = Modifier.size(28.dp)
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = title,
-                textAlign = TextAlign.Center,
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
-@Composable
-fun DescriptionSection(description: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Text(
-                text = "About This App",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-    }
-}
-
-@Composable
-fun DaySelectionSection(
-    navController: NavController,
-    viewModel: RequestDetailsViewModel,
-    requestId: String?,
-    durationInDays: Int,
-    selectedDay: Int,
-    onDaySelected: (Int) -> Unit,
-    progress: Float
-) {
-    val pagerState = rememberPagerState(
-        initialPage = (selectedDay - 1).coerceIn(0, durationInDays - 1),
-        pageCount = { durationInDays }
-    )
-    val coroutineScope = rememberCoroutineScope()
-
-    val isProgrammaticScroll = remember { mutableStateOf(false) }
-
-    // Synchronize pager with selected day
-    LaunchedEffect(selectedDay) {
-        if (!isProgrammaticScroll.value && pagerState.currentPage != selectedDay - 1) {
-            isProgrammaticScroll.value = true
-            pagerState.animateScrollToPage(
-                page = (selectedDay - 1).coerceIn(0, durationInDays - 1)
-            )
-            isProgrammaticScroll.value = false
-        }
-    }
-
-    // Update selected day when pager changes
-    LaunchedEffect(pagerState.currentPage, pagerState.isScrollInProgress) {
-        if (!pagerState.isScrollInProgress && !isProgrammaticScroll.value) {
-            val newDay = pagerState.currentPage + 1
-            if (newDay != selectedDay) {
-                onDaySelected(newDay)
-            }
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-
-        // Tab row for days
-        ScrollableTabRow(
-            selectedTabIndex = selectedDay - 1,
-            edgePadding = 16.dp,
-            containerColor = MaterialTheme.colorScheme.surface,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(24.dp)),
-            indicator = { tabPositions ->
-                TabRowDefaults.Indicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[selectedDay - 1]),
-                    height = 3.dp,
-                    color = MaterialTheme.colorScheme.primary
-                )
-            },
-            divider = { }
-        ) {
-            for (i in 1..durationInDays) {
-                val isCompleted = i <= progress * durationInDays
-
-                Tab(
-                    selected = i == selectedDay,
-                    onClick = {
-                        onDaySelected(i)
-                        coroutineScope.launch {
-                            pagerState.animateScrollToPage(i - 1)
-                        }
-                    },
-                    modifier = Modifier.height(48.dp)
-                ) {
-                    DayTab(
-                        day = i,
-                        isSelected = i == selectedDay,
-                        isCompleted = isCompleted
-                    )
-                }
-            }
-        }
-
-        // Content pager
-        HorizontalPager(
-            state = pagerState,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp)
-        ) { page ->
-
-            val day = page + 1
-
-            val isDayComplete = day <= progress * durationInDays
-
-            val dayTestDetails = viewModel.getTestDetailsForDay(day)
-
-            val dayAssignedTester = viewModel.getAssignedTesters(day)
-
-            DayDetailsCard(
-                day = day,
-                isCompleted = isDayComplete,
-                appName =  "App Name",
-                testDetails = dayTestDetails,
-                assignedTesters = dayAssignedTester,
-                onViewAssignedUsers = {
-
-                    navController.navigate("assigned_users/$day")
-                }
-            )
-        }
-    }
-}
-
-@Composable
-fun DayTab(
-    day: Int,
-    isSelected: Boolean,
-    isCompleted: Boolean
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-        modifier = Modifier.padding(horizontal = 8.dp)
-    ) {
-        Text(
-            text = "Day $day",
-            style = MaterialTheme.typography.titleSmall,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
-        )
-
-        if (isCompleted) {
-            Spacer(modifier = Modifier.width(4.dp))
-            Icon(
-                imageVector = Icons.Default.Check,
-                contentDescription = null,
-                modifier = Modifier.size(16.dp)
-            )
-        }
-    }
-}
-
-
-@Composable
-fun DayDetailsSection(
-    request: Request,
-    selectedDay: Int,
-    progress: Float
-) {
-    val isDayComplete = selectedDay <= progress * request.durationInDays
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "Day $selectedDay Details",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-
-                Surface(
-                    color = if (isDayComplete)
-                        MaterialTheme.colorScheme.primary
-                    else
-                        MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Text(
-                        text = if (isDayComplete) "Complete" else "Pending",
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        color = if (isDayComplete)
-                            MaterialTheme.colorScheme.onPrimary
-                        else
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (isDayComplete) {
-                // Show screenshot section
-                DayContent(
-                    title = "Screenshot",
-                    icon = Icons.Outlined.Image,
-                    hasContent = true
-                ) {
-                    // Placeholder for screenshot
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(200.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(MaterialTheme.colorScheme.background),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.Image,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(64.dp)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Show feedback section
-                DayContent(
-                    title = "Feedback",
-                    icon = Icons.Outlined.Comment,
-                    hasContent = false
-                ) {
-                    Text(
-                        text = "No feedback provided for this day.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            } else {
-                // Day not completed yet
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            imageVector = Icons.Outlined.HourglassEmpty,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(48.dp)
-                        )
-
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Text(
-                            text = "Content will appear here once Day $selectedDay is complete",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun DayContent(
-    title: String,
-    icon: ImageVector,
-    hasContent: Boolean,
-    content: @Composable () -> Unit
-) {
-    Column {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(20.dp)
-            )
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Text(
-                text = title,
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.Medium
-            )
-        }
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        content()
-    }
-}
-
-// Helper extensions
-private fun String.capitalize(): String {
-    return if (this.isNotEmpty()) {
-        this[0].uppercase() + this.substring(1)
-    } else {
-        this
-    }
+// Define a enum for day status
+enum class DayStatus {
+    Completed,
+    InProgress,
+    Upcoming,
+    Expired
 }
