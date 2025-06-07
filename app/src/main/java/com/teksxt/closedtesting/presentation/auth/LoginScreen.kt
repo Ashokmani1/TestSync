@@ -117,11 +117,10 @@ fun LoginScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             // Smaller app icon
-            Icon(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+            Image(
+                painter = painterResource(id = R.mipmap.ic_launcher),
                 contentDescription = "App Logo",
-                modifier = Modifier.size(140.dp),
-                tint = MaterialTheme.colorScheme.primary
+                modifier = Modifier.size(140.dp)
             )
 
             // Reduced spacing after icon
