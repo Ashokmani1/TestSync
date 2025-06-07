@@ -1,129 +1,128 @@
 package com.teksxt.closedtesting.presentation.auth
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.expandVertically
-import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.MarkEmailRead
-import androidx.compose.material.icons.rounded.MarkEmailUnread
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.NavController
+import kotlinx.coroutines.delay
 
 @Composable
-fun EmailVerificationBanner(
-    isEmailVerified: Boolean,
-    userEmail: String,
-    onSendVerificationEmail: () -> Unit,
-    onRefreshStatus: () -> Unit,
-    isLoading: Boolean = false,
-    errorMessage: String? = null
+fun EnhancedEmailVerificationBanner(
+    navController: NavController,
+    viewModel: EmailVerificationViewModel = hiltViewModel()
 ) {
-    var expanded by remember { mutableStateOf(true) }
+    val state by viewModel.state.collectAsState()
 
-    AnimatedVisibility(
-        visible = !isEmailVerified && expanded,
-        enter = expandVertically(),
-        exit = shrinkVertically()
-    ) {
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-            )
+    // Only show if email is not verified and the banner is not dismissed
+    if (!state.isEmailVerified && state.showBanner) {
+        AnimatedVisibility(
+            visible = true,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
         ) {
-            Column(
+            ElevatedCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
+                shape = RoundedCornerShape(16.dp),
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = 4.dp
+                )
             ) {
-                Icon(
-                    imageVector = Icons.Rounded.MarkEmailUnread,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Text(
-                    text = "Verify Your Email",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                Text(
-                    text = "Please verify $userEmail to access all features",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
-                    textAlign = TextAlign.Center
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                Box(
+                    modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f))
                 ) {
-                    OutlinedButton(
-                        onClick = onRefreshStatus,
-                        modifier = Modifier.weight(1f),
-                        enabled = !isLoading
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Text("Refresh Status")
-                    }
+                        // Animated icon
+                        val infiniteTransition = rememberInfiniteTransition(label = "iconPulse")
+                        val iconAlpha by infiniteTransition.animateFloat(
+                            initialValue = 0.7f,
+                            targetValue = 1.0f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(1000),
+                                repeatMode = RepeatMode.Reverse
+                            ),
+                            label = "iconAlpha"
+                        )
 
-                    Button(
-                        onClick = onSendVerificationEmail,
-                        modifier = Modifier.weight(1f),
-                        enabled = !isLoading
-                    ) {
-                        if (isLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp,
-                                color = MaterialTheme.colorScheme.onPrimary
-                            )
-                        } else {
-                            Text("Send Link")
+                        Icon(
+                            imageVector = Icons.Rounded.MarkEmailUnread,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary.copy(alpha = iconAlpha),
+                            modifier = Modifier.size(32.dp)
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Text(
+                            text = "Verify Your Email",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Text(
+                            text = "Please verify ${state.userEmail} to unlock all features",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                            textAlign = TextAlign.Center
+                        )
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = {
+                                // Navigate to the email verification screen
+                                navController.navigate("email_verification")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary
+                            ),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Verify Now")
                         }
                     }
-                }
 
-                AnimatedVisibility(visible = errorMessage != null) {
-                    errorMessage?.let {
-                        Text(
-                            text = it,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(top = 8.dp)
+                    // Dismiss button
+                    IconButton(
+                        onClick = { viewModel.dismissBanner() },
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
                         )
                     }
                 }
-
-                TextButton(
-                    onClick = { expanded = false },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text(
-                        "Dismiss",
-                        style = MaterialTheme.typography.labelMedium
-                    )
-                }
             }
         }
+    } else if (state.isEmailVerified && state.showBanner) {
+        // Show verification success banner briefly
+        EmailVerifiedBanner(onDismiss = { viewModel.dismissBanner() })
     }
 }
 
@@ -133,16 +132,23 @@ fun EmailVerifiedBanner(
 ) {
     var visible by remember { mutableStateOf(true) }
 
+    // Auto-dismiss after showing briefly
+    LaunchedEffect(Unit) {
+        delay(5000)
+        visible = false
+        onDismiss()
+    }
+
     AnimatedVisibility(
         visible = visible,
-        enter = expandVertically(),
-        exit = shrinkVertically()
+        enter = expandVertically() + fadeIn(),
+        exit = shrinkVertically() + fadeOut()
     ) {
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-            shape = RoundedCornerShape(12.dp),
+                .padding(16.dp),
+            shape = RoundedCornerShape(16.dp),
             colors = CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.tertiaryContainer
             )
@@ -156,28 +162,35 @@ fun EmailVerifiedBanner(
                 Icon(
                     imageVector = Icons.Rounded.MarkEmailRead,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.tertiary
+                    tint = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.size(28.dp)
                 )
 
                 Spacer(modifier = Modifier.width(16.dp))
 
-                Text(
-                    text = "Email verified successfully!",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.weight(1f),
-                    color = MaterialTheme.colorScheme.onTertiaryContainer
-                )
-
-                IconButton(
-                    onClick = {
-                        visible = false
-                        onDismiss()
-                    }
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "OK",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.tertiary
+                        text = "Email Verified!",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+
+                    Text(
+                        text = "You now have full access to all features",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                    )
+                }
+
+                IconButton(onClick = {
+                    visible = false
+                    onDismiss()
+                }) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Dismiss",
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
                     )
                 }
             }

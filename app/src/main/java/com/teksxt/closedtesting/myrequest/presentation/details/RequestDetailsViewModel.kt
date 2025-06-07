@@ -46,7 +46,6 @@ class RequestDetailsViewModel @Inject constructor(
     val errorMessage: SharedFlow<String> = _errorMessage.asSharedFlow()
 
     private val _assignedTesters = MutableStateFlow<Map<Int, List<AssignedTester>>>(emptyMap())
-    val assignedTesters: StateFlow<Map<Int, List<AssignedTester>>> = _assignedTesters.asStateFlow()
 
     private val _selectedDay = MutableStateFlow(1)
     val selectedDay: StateFlow<Int> = _selectedDay.asStateFlow()
@@ -64,6 +63,9 @@ class RequestDetailsViewModel @Inject constructor(
 
     private val _scrollToPosition = MutableSharedFlow<Int>()
     val scrollToPosition: SharedFlow<Int> = _scrollToPosition.asSharedFlow()
+
+    private val _sendBulkReminderLoading = MutableStateFlow(false)
+    val sendBulkReminderLoading: StateFlow<Boolean> = _sendBulkReminderLoading.asStateFlow()
 
     // Request data with proper Resource handling
     private val _requestResource = MutableStateFlow<Resource<Request?>>(Resource.Loading())
@@ -199,7 +201,7 @@ class RequestDetailsViewModel @Inject constructor(
     fun sendBulkReminders(dayNumber: Int?) {
         viewModelScope.launch {
             try {
-                _isLoading.value = true
+                _sendBulkReminderLoading.value = true
                 val testerIds = getAssignedTesters(dayNumber)
                     .filter { !it.hasCompleted }
                     .map { it.id }
@@ -226,7 +228,7 @@ class RequestDetailsViewModel @Inject constructor(
             } catch (e: Exception) {
                 _errorMessage.emit("Failed to send reminders: ${e.message}")
             } finally {
-                _isLoading.value = false
+                _sendBulkReminderLoading.value = false
             }
         }
     }
@@ -251,56 +253,56 @@ class RequestDetailsViewModel @Inject constructor(
         }
     }
 
-    // Share app details with more comprehensive information
     fun shareAppDetails(context: Context) {
         viewModelScope.launch {
             try {
                 val request = request.value ?: return@launch
-
-                // First fetch app details to get proper links
                 val app = appDetails.value
 
                 val shareText = buildString {
-                    append("🧪 Testing Invitation: ${request.title}\n\n")
+                    append("🧪 You're Invited to Test: ${app?.name ?: request.title}\n\n")
 
-                    if (!request.description.isNullOrEmpty()) {
-                        append("📝 ${request.description}\n\n")
+                    // App Details
+                    append("📱 App Details\n\n")
+
+                    append("Name: ${app?.name ?: "N/A"}\n")
+
+                    // Description
+                    request.description?.takeIf { it.isNotBlank() }?.let {
+                        append("📝 $it\n\n")
                     }
 
-                    // Include testing details
-                    append("⏱️ Duration: ${request.testingDays} days\n")
-
-                    append("👥 Testers: ${request.currentTestersCount}/${request.requiredTestersCount}\n\n")
-
-                    // App details section
-                    if (app != null) {
-                        append("📱 App Details:\n")
-                        if (!app.name.isNullOrEmpty()) {
-                            append("Name: ${app.name}\n")
-                        }
-
-                        // Add Play Store link if available
-                        if (!app.playStoreUrl.isNullOrEmpty()) {
-                            append("\nGet it on Play Store:\n${app.playStoreUrl}\n\n")
-                        }
+                    // Play Store URL
+                    app?.playStoreUrl?.takeIf { it.isNotBlank() }?.let {
+                        append("📦 Download from Play Store:\n$it\n\n")
                     }
 
-                    // Group joining information
-                    append("📲 Join the testing group: ")
-
-                    // Fix the truncated group link (assuming it's stored in a request field)
-                    if (!app?.googleGroupUrl.isNullOrEmpty()) {
-                        append(app.googleGroupUrl)
-                    } else {
-                        append("Contact the organizer for access details.")
+                    // Web Testing Link (Opt-in)
+                    app?.testApkUrl?.takeIf { it.isNotBlank() }?.let {
+                        append("🌐 Join Web Testing (Opt-in):\n$it\n\n")
                     }
 
-                    append("\n\nShared via TestSync App") // TODO check at last app name
+                    // Tester Group
+                    app?.googleGroupUrl?.takeIf { it.isNotBlank() }?.let {
+                        append("👥 Join Our Tester Community:\n$it\n\n")
+                    } ?: append("👥 Join Our Tester Community:\nContact the organizer for access.\n\n")
+
+                    app?.premiumCode?.takeIf { it.isNotBlank() }?.let {
+                        append("🔐 Premium Code:\n$it\n\n")
+                    }
+
+                    // Optional: Test Instructions
+                    app?.testingInstructions?.takeIf { it.isNotBlank() }?.let {
+                        append("🧾 Test Instructions:\n$it\n\n")
+                    }
+
+                    // Footer
+                    append("📤 Shared via TestSync App — download now and simplify your testing experience!")
                 }
 
                 val shareIntent = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "Join testing for ${request.title}")
+                    putExtra(Intent.EXTRA_SUBJECT, "Join testing for ${app?.name ?: request.title}")
                     putExtra(Intent.EXTRA_TEXT, shareText)
                 }
 
@@ -347,9 +349,6 @@ class RequestDetailsViewModel @Inject constructor(
         viewModelScope.launch {
 
             _scrollToPosition.emit(2)
-
-            // Also show a helpful snackbar message
-            _snackbarMessage.emit("Scrolling to testers section")
         }
     }
 }

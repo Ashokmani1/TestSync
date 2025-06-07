@@ -1,6 +1,7 @@
 package com.teksxt.closedtesting.chat.data.repository
 
 import android.net.Uri
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
@@ -10,18 +11,19 @@ import com.teksxt.closedtesting.chat.domain.model.ChatMessage
 import com.teksxt.closedtesting.chat.domain.model.MessageType
 import com.teksxt.closedtesting.chat.domain.repository.ChatRepository
 import com.teksxt.closedtesting.core.util.Resource
-import com.teksxt.closedtesting.domain.model.NotificationData
+import com.teksxt.closedtesting.domain.model.Notification
 import com.teksxt.closedtesting.service.NotificationService
 import com.teksxt.closedtesting.settings.domain.repository.UserRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.util.UUID
 import javax.inject.Inject
 
 class FirebaseChatRepository @Inject constructor(
-    private val firebaseAuth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
     private val storage: FirebaseStorage,
     private val auth: FirebaseAuth,
@@ -84,23 +86,20 @@ class FirebaseChatRepository @Inject constructor(
                 MessageType.REMINDER -> {
                     Pair("Reminder", message.content)
                 }
-                MessageType.FEEDBACK -> {
-                    Pair("Feedback received", "$senderName left feedback on your test")
-                }
-                MessageType.SYSTEM -> {
-                    Pair("System notification", message.content)
-                }
             }
 
             // Create notification data
-            val notification = NotificationData(
+            val notification = Notification(
+                id = UUID.randomUUID().toString(),
                 title = title,
                 body = body,
                 requestId = message.requestId,
                 dayNumber = message.dayNumber?.toString() ?: "",
-                type = "chat_message",
+                type = if (message.messageType == MessageType.REMINDER) "reminder" else "chat_message",
                 testerId = message.senderId,
-                channelId = "chat_messages"
+                channelId = "chat_messages",
+                createdAt = System.currentTimeMillis(),
+                userId = message.receiverId
             )
 
             // Send notification to recipient
@@ -143,13 +142,8 @@ class FirebaseChatRepository @Inject constructor(
         awaitClose { listener.remove() }
     }
 
-    override suspend fun sendImageMessage(
-        requestId: String,
-        senderId: String,
-        receiverId: String,
-        dayNumber: Int?,
-        imageUri: Uri
-    ): Result<String> {
+    override suspend fun sendImageMessage(requestId: String, senderId: String, receiverId: String, dayNumber: Int?, imageUri: Uri): Result<String>
+    {
         return try {
             val imageName = "${UUID.randomUUID()}.jpg"
             val imageRef = storage.reference.child("chat_images/$requestId/$imageName")
@@ -283,46 +277,101 @@ class FirebaseChatRepository @Inject constructor(
         }
     }
 
-    override suspend fun setUserTypingStatus(chatId: String, userId: String, isTyping: Boolean): Result<Unit> {
-        return try {
-            val chatRef = chatCollection.document(chatId)
 
-            // Update typing status in chat metadata
-            val typingField = "typingUsers.$userId"
-            val updates = mapOf(
-                typingField to if (isTyping) System.currentTimeMillis() else null
-            )
+    override suspend fun deleteMessage(messageId: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            Log.d("ChatRepository", "Attempting to delete message with ID: $messageId")
 
-            chatRef.update(updates).await()
+            // Get the message first from messages collection
+            val messageDoc = messagesCollection.document(messageId).get().await()
+            if (!messageDoc.exists()) {
+                return@withContext Result.failure(Exception("Message not found"))
+            }
+
+            // Extract data we need before deleting
+            val message = messageDoc.toObject(ChatMessage::class.java)
+            val requestId = message?.requestId
+            val senderId = message?.senderId
+            val receiverId = message?.receiverId
+            val messageType = message?.messageType
+            val imageUrl = message?.imageUrl
+
+            if (requestId == null || senderId == null || receiverId == null) {
+                return@withContext Result.failure(Exception("Message data incomplete"))
+            }
+
+            // Calculate the chat ID
+            val chatId = getChatId(requestId, senderId, receiverId)
+
+            if (messageType == MessageType.IMAGE && !imageUrl.isNullOrEmpty()) {
+                try {
+                    // Convert the download URL to a storage reference and delete the file
+                    val storageRef = storage.getReferenceFromUrl(imageUrl)
+                    storageRef.delete().await()
+                    Log.d("ChatRepository", "Deleted image file from storage: $imageUrl")
+                } catch (e: Exception) {
+                    // Just log the error but continue with message deletion
+                    Log.e("ChatRepository", "Failed to delete image: ${e.message}", e)
+                }
+            }
+
+                // 1. Delete the message from messages collection
+            messagesCollection.document(messageId).delete().await()
+            Log.d("ChatRepository", "Message deleted from messages collection")
+
+
+            // 2. Update chat metadata if needed
+            val chatDoc = chatCollection.document(chatId).get().await()
+            if (chatDoc.exists()) {
+                val lastMessage = chatDoc.get("lastMessage") as? Map<*, *>
+                val lastMessageId = lastMessage?.get("id") as? String
+
+                // If this was the last message, update the last message
+                if (lastMessageId == messageId) {
+                    // Find new last message
+                    val newLastMessageQuery = messagesCollection
+                        .whereEqualTo("requestId", requestId)
+                        .whereIn("senderId", listOf(senderId, receiverId))
+                        .whereIn("receiverId", listOf(senderId, receiverId))
+                        .orderBy("timestamp", Query.Direction.DESCENDING)
+                        .limit(1)
+                        .get()
+                        .await()
+
+                    if (!newLastMessageQuery.isEmpty) {
+                        val newLastMessage = newLastMessageQuery.documents[0].toObject(ChatMessage::class.java)
+                        chatCollection.document(chatId).update(
+                            "lastMessage", newLastMessage,
+                            "lastMessageTimestamp", newLastMessage?.timestamp
+                        ).await()
+                        Log.d("ChatRepository", "Updated chat with new last message")
+                    } else {
+                        // No messages left
+                        chatCollection.document(chatId).update(
+                            "lastMessage", null,
+                            "lastMessageTimestamp", FieldValue.serverTimestamp()
+                        ).await()
+                        Log.d("ChatRepository", "No messages left, cleared last message")
+                    }
+                }
+
+                // Remove from messageIds array if it exists
+                if (chatDoc.contains("messageIds")) {
+                    val messageIds = chatDoc.get("messageIds") as? List<String> ?: emptyList()
+                    if (messageId in messageIds) {
+                        val updatedMessageIds = messageIds.filter { it != messageId }
+                        chatCollection.document(chatId).update(
+                            "messageIds", updatedMessageIds
+                        ).await()
+                        Log.d("ChatRepository", "Removed message from messageIds array")
+                    }
+                }
+            }
+
+            Log.d("ChatRepository", "Successfully deleted message with ID: $messageId")
             Result.success(Unit)
         } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun createFeedbackMessage(requestId: String, testerId: String, dayNumber: Int, content: String): Result<ChatMessage>
-    {
-        return try {
-            val currentUser = firebaseAuth.currentUser ?: throw Exception("User not logged in")
-
-            // Create a new message with FEEDBACK type
-            val messageId = UUID.randomUUID().toString()
-            val message = ChatMessage(
-                id = messageId,
-                requestId = requestId,
-                senderId = currentUser.uid,
-                receiverId = testerId,
-                content = content,
-                timestamp = System.currentTimeMillis(),
-                dayNumber = dayNumber,
-                messageType = MessageType.FEEDBACK,
-                isCompleted = true // A feedback message implies day completion
-            )
-
-            sendMessage(message)
-
-            Result.success(message)
-        } catch (e: Exception) {
+            Log.e("ChatRepository", "Error deleting message: ${e.message}", e)
             Result.failure(e)
         }
     }

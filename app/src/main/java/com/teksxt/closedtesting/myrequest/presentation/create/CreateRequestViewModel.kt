@@ -11,7 +11,6 @@ import com.teksxt.closedtesting.explore.domain.repo.AppRepository
 import com.teksxt.closedtesting.myrequest.domain.model.Request
 import com.teksxt.closedtesting.myrequest.domain.repo.RequestRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -19,7 +18,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import java.util.Date
 import java.util.UUID
 import javax.inject.Inject
 
@@ -39,11 +37,38 @@ class CreateRequestViewModel @Inject constructor(
         private set
     var playStoreLink by mutableStateOf("")
         private set
-    var numberOfTesters by mutableStateOf("")
-        private set
     var durationInDays by mutableStateOf("")
         private set
     var isPremium by mutableStateOf(false)
+        private set
+
+    var joinWebLink by mutableStateOf("")
+        private set
+    var joinWebLinkError by mutableStateOf<String?>(null)
+        private set
+
+    var appCategory by mutableStateOf("")
+        private set
+    var appCategoryError by mutableStateOf<String?>(null)
+        private set
+
+    var isDropdownExpanded by mutableStateOf(false)
+        private set
+
+    // List of available app categories
+    val appCategories = listOf(
+        "Games", "Education", "Business", "Entertainment",
+        "Finance", "Health & Fitness", "Lifestyle", "Productivity",
+        "Social", "Tools", "Travel", "Music & Audio", "Photography",
+        "Shopping", "Sports", "Weather", "Other"
+    )
+
+    var promoCode by mutableStateOf("")
+        private set
+    var promoCodeError by mutableStateOf<String?>(null)
+        private set
+
+    var testingInstructions by mutableStateOf("")
         private set
 
     // Form field errors
@@ -54,8 +79,6 @@ class CreateRequestViewModel @Inject constructor(
     var groupLinkError by mutableStateOf<String?>(null)
         private set
     var playStoreLinkError by mutableStateOf<String?>(null)
-        private set
-    var numberOfTestersError by mutableStateOf<String?>(null)
         private set
     var durationInDaysError by mutableStateOf<String?>(null)
         private set
@@ -93,10 +116,6 @@ class CreateRequestViewModel @Inject constructor(
         playStoreLinkError = null
     }
 
-    fun updateNumberOfTesters(value: String) {
-        numberOfTesters = value
-        numberOfTestersError = null
-    }
 
     fun updateDurationInDays(value: String) {
         durationInDays = value
@@ -105,6 +124,29 @@ class CreateRequestViewModel @Inject constructor(
 
     fun updateIsPremium(value: Boolean) {
         isPremium = value
+    }
+
+    fun updateJoinWebLink(value: String) {
+        joinWebLink = value
+        joinWebLinkError = null
+    }
+
+    fun updateAppCategory(value: String) {
+        appCategory = value
+        appCategoryError = null
+    }
+
+    fun setCategoryDropdownExpanded(value: Boolean) {
+        isDropdownExpanded = value
+    }
+
+    fun updatePromoCode(value: String) {
+        promoCode = value
+        promoCodeError = null
+    }
+
+    fun updateTestingInstructions(value: String) {
+        testingInstructions = value
     }
 
     // Validation
@@ -137,22 +179,6 @@ class CreateRequestViewModel @Inject constructor(
             isValid = false
         }
 
-        if (numberOfTesters.isBlank()) {
-            numberOfTestersError = "Number of testers cannot be empty"
-            isValid = false
-        } else {
-            try {
-                val numTesters = numberOfTesters.toInt()
-                if (numTesters <= 0) {
-                    numberOfTestersError = "Number of testers must be positive"
-                    isValid = false
-                }
-            } catch (e: NumberFormatException) {
-                numberOfTestersError = "Enter a valid number"
-                isValid = false
-            }
-        }
-
         if (durationInDays.isBlank()) {
             durationInDaysError = "Duration cannot be empty"
             isValid = false
@@ -162,14 +188,34 @@ class CreateRequestViewModel @Inject constructor(
                 if (days <= 0) {
                     durationInDaysError = "Duration must be positive"
                     isValid = false
-                } else if (days > 28) {
-                    durationInDaysError = "Maximum duration is 28 days"
+                } else if (days > 21) {
+                    durationInDaysError = "Maximum duration is 20 days"
                     isValid = false
                 }
             } catch (e: NumberFormatException) {
                 durationInDaysError = "Enter a valid number"
                 isValid = false
             }
+        }
+
+        if (joinWebLink.isBlank()) {
+            joinWebLinkError = "Testing join link cannot be empty"
+            isValid = false
+        } else if (!isValidUrl(joinWebLink)) {
+            joinWebLinkError = "Enter a valid URL"
+            isValid = false
+        }
+
+        // Validate app category
+        if (appCategory.isBlank()) {
+            appCategoryError = "Please select an app category"
+            isValid = false
+        }
+
+        // Validate promo code if premium
+        if (isPremium && promoCode.isBlank()) {
+            promoCodeError = "Promo code is required for premium apps"
+            isValid = false
         }
 
         return isValid
@@ -199,6 +245,15 @@ class CreateRequestViewModel @Inject constructor(
                 // Generate app ID from Play Store link
                 val appId = com.teksxt.closedtesting.util.TestSyncUtil.generateAppId(playStoreLink)
 
+                val existingRequest = requestRepository.getRequestByAppID(appId).getOrNull()
+
+                if (existingRequest != null && existingRequest.ownerUserId == currentUserId)
+                {
+                    _errorMessage.emit("You already have an active request for this app")
+                    _isLoading.value = false
+                    return@launch
+                }
+
                 // Create the request with the current model structure
                 val request = Request(
                     id = UUID.randomUUID().toString(),
@@ -213,7 +268,7 @@ class CreateRequestViewModel @Inject constructor(
                     startDate = System.currentTimeMillis(),
                     endDate = System.currentTimeMillis() + (durationInDays.toInt() * 24 * 60 * 60 * 1000L),
                     testingDays = durationInDays.toInt(),
-                    requiredTestersCount = numberOfTesters.toInt(),
+                    requiredTestersCount = 0,
                     currentTestersCount = 0,
                     testerIds = emptyList(),
                     isPublic = true,
@@ -229,24 +284,18 @@ class CreateRequestViewModel @Inject constructor(
                     iconUrl = null,
                     packageName = appId,
                     playStoreUrl = playStoreLink,
-                    testApkUrl = null,
+                    testApkUrl = joinWebLink,
                     googleGroupUrl = groupLink,
-                    version = "",
                     ownerUserId = currentUserId,
-                    categoryId = null,
+                    category = appCategory,
                     status = "ACTIVE",
                     createdAt = System.currentTimeMillis(),
                     updatedAt = System.currentTimeMillis(),
-                    minSdkVersion = null,
-                    targetSdkVersion = null,
-                    features = null,
-                    requiredPermissions = null,
-                    screenshots = null,
-                    testingInstructions = null,
-                    totalTesters = numberOfTesters.toInt(),
+                    testingInstructions = testingInstructions,
+                    totalTesters = 0,
                     activeTesters = 0,
                     testingDays = durationInDays.toInt(),
-                    averageRating = null
+                    premiumCode = if (isPremium) promoCode else null
                 )
                 
                 // First create/update the app
@@ -271,14 +320,5 @@ class CreateRequestViewModel @Inject constructor(
                 _isLoading.value = false
             }
         }
-    }
-
-    fun resetErrors() {
-        appNameError = null
-        descriptionError = null
-        groupLinkError = null
-        playStoreLinkError = null
-        numberOfTestersError = null
-        durationInDaysError = null
     }
 }

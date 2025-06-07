@@ -9,10 +9,12 @@ import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,12 +22,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.app.NotificationCompat
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.google.firebase.firestore.FirebaseFirestore
 import com.teksxt.closedtesting.core.presentation.component.NotificationPermissionHandler
+import com.teksxt.closedtesting.core.presentation.viewmodel.AppViewModel
+import com.teksxt.closedtesting.core.theme.ThemeManager
 import com.teksxt.closedtesting.presentation.navigation.NavGraph
 import com.teksxt.closedtesting.ui.theme.TestSyncTheme
-import com.teksxt.closedtesting.util.PermissionHandler
+import com.teksxt.closedtesting.core.util.PermissionHandler
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.TimeZone
 import kotlin.text.compareTo
@@ -36,54 +41,21 @@ import java.util.Locale
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
+    private val viewModel: AppViewModel by viewModels()
+
+    override fun onCreate(savedInstanceState: Bundle?)
+    {
         enableEdgeToEdge()
+
         super.onCreate(savedInstanceState)
 
-//        FirebaseFirestore.getInstance()
-//            .collection("users")
-//            .get()
-//            .addOnSuccessListener { documents ->
-//                for (document in documents) {
-//                    val timestamp = document.getTimestamp("lastActive")
-//
-//                    if (timestamp != null) {
-//                        // Format local time
-//                        val localFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-//                        localFormat.timeZone = TimeZone.getDefault()
-//                        val localTime = localFormat.format(timestamp.toDate())
-//
-//                        // Format UTC time
-//                        val utcFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-//                        utcFormat.timeZone = TimeZone.getTimeZone("UTC")
-//                        val utcTime = utcFormat.format(timestamp.toDate())
-//
-//                        Log.d("Timestamps", "Local Time: $localTime")
-//                        Log.d("Timestamps", "UTC Time: $utcTime")
-//                    } else {
-//                        Log.w("Timestamps", "Timestamp is null (maybe still syncing from server)")
-//                    }
-//                }
-//            }
-//            .addOnFailureListener { e ->
-//                Log.w("Firestore", "Error getting documents", e)
-//            }
         setContent {
 
-            TestSyncTheme {
+            val appState by viewModel.appState.collectAsState()
+
+            TestSyncTheme(darkTheme = ThemeManager.isDarkTheme(appState.themeMode)) {
                 // Get context for permission checking
                 val context = LocalContext.current
-
-                var shouldShowPermissionDialog by remember {
-                    mutableStateOf(false)
-                }
-
-                // Handle notification permission check after splash screen
-                LaunchedEffect(Unit) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        shouldShowPermissionDialog = !PermissionHandler.hasNotificationPermission(context)
-                    }
-                }
 
                 Surface(
                     modifier = Modifier.fillMaxSize(),
@@ -91,13 +63,25 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val navController = rememberNavController()
 
+                    val currentBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentRoute = currentBackStackEntry?.destination?.route
+                
+                    var shouldShowPermissionDialog by remember { mutableStateOf(false) }
+                    
+                    // Only check for permissions when we reach my_requests screen
+                    LaunchedEffect(currentRoute) {
+                        if (currentRoute == "my_requests" && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            shouldShowPermissionDialog = !PermissionHandler.hasNotificationPermission(context)
+                        }
+                    }
+
                     // Main navigation graph
                     NavGraph(
                         navController = navController,
                         startDestination = "splash"
                     )
 
-                    if (shouldShowPermissionDialog) {
+                    if (shouldShowPermissionDialog && currentRoute == "my_requests") {
                         NotificationPermissionHandler(
                             shouldRequestPermission = true,
                             onPermissionResult = { granted ->
@@ -115,8 +99,7 @@ class MainActivity : ComponentActivity() {
 
     private fun createNotificationChannel()
     {
-        val channel = NotificationChannel("default", "Default Channel", NotificationManager.IMPORTANCE_DEFAULT
-        ).apply {
+        val channel = NotificationChannel("default", "Default Channel", NotificationManager.IMPORTANCE_DEFAULT).apply {
             description = "Default notification channel"
         }
 

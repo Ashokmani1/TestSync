@@ -4,6 +4,7 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.teksxt.closedtesting.core.util.ProgressUtils
 import com.teksxt.closedtesting.explore.domain.model.App
 import com.teksxt.closedtesting.explore.domain.repo.AppRepository
 import com.teksxt.closedtesting.myrequest.domain.repo.RequestRepository
@@ -15,6 +16,7 @@ import com.teksxt.closedtesting.picked.domain.repo.PickedAppRepository
 import com.teksxt.closedtesting.util.Resource
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -93,6 +95,29 @@ class PickedAppRepositoryImpl @Inject constructor(
         return try {
             // First try to get from local database
             val localPickedApp = pickedAppDao.getPickedAppById(id)
+
+            if (localPickedApp != null) {
+                // Get app details to know max testing days
+                val appDetails = appRepository.getAppById(localPickedApp.appId).getOrNull()
+                val maxTestDays = appDetails?.testingDays ?: 20 // Default max days
+
+                // Calculate the current day based on elapsed time
+                val updatedDay = calculateCurrentTestDay(localPickedApp, maxTestDays)
+
+                // If day changed, update it in storage
+                if (updatedDay != localPickedApp.currentTestDay) {
+                    updatePickedAppProgress(
+                        id = localPickedApp.id,
+                        completionRate = localPickedApp.completionRate,
+                        currentTestDay = updatedDay
+                    )
+
+                    // Return updated model
+                    return Result.success(localPickedApp.copy(currentTestDay = updatedDay).toDomainModel())
+                }
+
+                return Result.success(localPickedApp.toDomainModel())
+            }
 
             // Then fetch from Firestore and update local if needed
             val remoteDoc = pickedAppsCollection.document(id).get().await()
@@ -174,7 +199,26 @@ class PickedAppRepositoryImpl @Inject constructor(
         try {
             // Observe local database
             pickedAppDao.getPickedAppsByUserFlow(userId).collect { localPickedApps ->
-                emit(Resource.Success(localPickedApps.map { it.toDomainModel() }))
+
+                emit(
+                    Resource.Success(
+                        localPickedApps.map { entity ->
+
+                            val pickedApp = entity.toDomainModel()
+
+                            val appDetails = runBlocking {
+                                appRepository.getAppById(pickedApp.appId).getOrNull()
+                            }
+                            val maxTestDays = appDetails?.testingDays ?: 20 // Default max days
+
+                            // Calculate current day based on elapsed time
+                            val currentDay = calculateCurrentTestDay(entity, maxTestDays)
+
+                            // Return updated model
+                            pickedApp.copy(currentTestDay = currentDay)
+                        }
+                    )
+                )
 
                 // Try to fetch from Firestore in background
                 try {
@@ -198,53 +242,6 @@ class PickedAppRepositoryImpl @Inject constructor(
             }
         } catch (e: Exception) {
             emit(Resource.Error("Failed to load picked apps: ${e.message}"))
-        }
-    }
-
-    override suspend fun getAppPickedApps(appId: String): Result<List<PickedApp>> {
-        return try {
-            // Try to get from Firestore
-            val remoteQuery = pickedAppsCollection.whereEqualTo("appId", appId).get().await()
-            val remotePickedApps = remoteQuery.documents.mapNotNull {
-                it.toObject(PickedAppDto::class.java)?.toPickedApp()
-            }
-
-            // Save to local database
-            pickedAppDao.insertPickedApps(remotePickedApps.map {
-                PickedAppEntity.fromDomainModel(it).copy(
-                    lastSyncedAt = System.currentTimeMillis(),
-                    isModifiedLocally = false
-                )
-            })
-
-            Result.success(remotePickedApps)
-        } catch (e: Exception) {
-            // If remote fetch fails, try to get from local database
-            try {
-                val localPickedApps = pickedAppDao.getPickedAppsByApp(appId)
-                Result.success(localPickedApps.map { it.toDomainModel() })
-            } catch (e2: Exception) {
-                Result.failure(e2)
-            }
-        }
-    }
-
-    override suspend fun hasUserPickedApp(appId: String): Result<Boolean> {
-        return try {
-            val userId = auth.currentUser?.uid ?: return Result.failure(Exception("User not logged in"))
-            val id = "${userId}_${appId}"
-
-            // Check in local database first
-            val localPickedApp = pickedAppDao.getPickedAppById(id)
-            if (localPickedApp != null) {
-                return Result.success(true)
-            }
-
-            // Check in Firestore
-            val remoteDoc = pickedAppsCollection.document(id).get().await()
-            Result.success(remoteDoc.exists())
-        } catch (e: Exception) {
-            Result.failure(e)
         }
     }
 
@@ -424,5 +421,10 @@ class PickedAppRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             emit(Resource.Error("Failed to load picked apps: ${e.message}"))
         }
+    }
+
+    private fun calculateCurrentTestDay(pickedApp: PickedAppEntity, maxDays: Int): Int
+    {
+        return ProgressUtils.calculateCurrentTestDay(pickedApp, maxDays)
     }
 }

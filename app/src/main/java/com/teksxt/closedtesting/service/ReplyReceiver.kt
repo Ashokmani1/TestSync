@@ -31,7 +31,8 @@ class ReplyReceiver : BroadcastReceiver() {
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(context: Context, intent: Intent)
+    {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
             return
         }

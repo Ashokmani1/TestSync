@@ -9,13 +9,11 @@ import com.teksxt.closedtesting.explore.data.local.dao.AppDao
 import com.teksxt.closedtesting.explore.data.local.entity.AppEntity
 import com.teksxt.closedtesting.explore.data.remote.dto.AppDto
 import com.teksxt.closedtesting.explore.domain.model.App
-import com.teksxt.closedtesting.explore.domain.model.Screenshot
 import com.teksxt.closedtesting.explore.domain.repo.AppRepository
 import com.teksxt.closedtesting.util.Resource
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
 import javax.inject.Inject

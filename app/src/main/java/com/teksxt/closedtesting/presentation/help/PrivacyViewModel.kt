@@ -1,20 +1,33 @@
 package com.teksxt.closedtesting.presentation.help
 
+import android.app.NotificationManager
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.teksxt.closedtesting.domain.repository.AuthRepository
+import com.teksxt.closedtesting.notifications.domain.repository.NotificationRepository
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class PrivacyViewModel @Inject constructor() : ViewModel() {
+class PrivacyViewModel @Inject constructor(
+    private val authRepository: AuthRepository,
+    private val notificationRepository: NotificationRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PrivacyUiState())
     val uiState = _uiState.asStateFlow()
+
+    private val _events = MutableSharedFlow<PrivacyEvent>()
+    val events = _events.asSharedFlow()
 
     init {
         loadPrivacyPolicy()
@@ -28,12 +41,48 @@ class PrivacyViewModel @Inject constructor() : ViewModel() {
         _uiState.update { it.copy(showDeleteDialog = false) }
     }
 
+    // TODO delete account is stil pending.
     fun deleteAccount() {
         viewModelScope.launch {
-            // In a real app, this would call a use case to delete the user's account
-            // For now, just print to console and dismiss the dialog
-            println("Account deletion requested")
-            _uiState.update { it.copy(showDeleteDialog = false) }
+            try {
+                _uiState.update { it.copy(
+                    isLoading = true,
+                    showDeleteDialog = false
+                )}
+
+                // 1. First clean up user data in Firestore
+                val userId = authRepository.getCurrentUser()?.id
+                if (userId != null) {
+                    // Delete user's notifications
+                    notificationRepository.clearAllNotifications()
+
+                    // Delete user's other data (requests, apps, feedback, etc.)
+                    // This would normally call other repositories to clean up all user data
+                }
+
+                // 2. Delete the Firebase Auth account
+                val result = authRepository.deleteAccount()
+
+                if (result.isSuccess) {
+                    // Clear any remaining local data and preferences
+                    authRepository.logout()
+
+                    // Navigate to login screen
+                    _events.emit(PrivacyEvent.NavigateToLogin)
+                } else {
+                    // Show error
+                    val exception = result.exceptionOrNull()
+                    _uiState.update { it.copy(
+                        error = "Could not delete account: ${exception?.message ?: "Unknown error"}",
+                        isLoading = false
+                    )}
+                }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(
+                    error = "Failed to delete account: ${e.message}",
+                    isLoading = false
+                )}
+            }
         }
     }
 
@@ -93,15 +142,27 @@ class PrivacyViewModel @Inject constructor() : ViewModel() {
                     isLoading = false,
                     sections = sections,
                     effectiveDate = "April 12, 2025",
-                    version = "1.3" // TODO check this
+                    version = ""
                 )
             }
         }
     }
+
+    fun clearNotifications(context: Context)
+    {
+        val notificationManager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancelAll()
+    }
+
+}
+
+sealed class PrivacyEvent {
+    object NavigateToLogin : PrivacyEvent()
 }
 
 data class PrivacyUiState(
     val isLoading: Boolean = false,
+    val error: String? = null,
     val sections: List<PrivacySection> = emptyList(),
     val effectiveDate: String = "",
     val version: String = "",

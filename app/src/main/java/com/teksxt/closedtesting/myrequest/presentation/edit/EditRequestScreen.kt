@@ -168,6 +168,112 @@ fun EditRequestScreen(
                         )
                     )
 
+                    // Category dropdown
+                    ExposedDropdownMenuBox(
+                        expanded = uiState.isCategoryDropdownExpanded,
+                        onExpandedChange = { viewModel.setCategoryDropdownExpanded(it) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        OutlinedTextField(
+                            value = uiState.appCategory,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("App Category") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Category,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(expanded = uiState.isCategoryDropdownExpanded)
+                            },
+                            isError = uiState.appCategoryError != null,
+                            supportingText = uiState.appCategoryError?.let { {
+                                Text(it, color = MaterialTheme.colorScheme.error)
+                            } },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            )
+                        )
+
+                        ExposedDropdownMenu(
+                            expanded = uiState.isCategoryDropdownExpanded,
+                            onDismissRequest = { viewModel.setCategoryDropdownExpanded(false) },
+                            modifier = Modifier.exposedDropdownSize()
+                        ) {
+                            viewModel.appCategories.forEach { category ->
+                                DropdownMenuItem(
+                                    text = { Text(category) },
+                                    onClick = {
+                                        viewModel.updateAppCategory(category)
+                                        viewModel.setCategoryDropdownExpanded(false)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    // Premium Promo Code field
+                    if (uiState.isPremium) {
+                        OutlinedTextField(
+                            value = uiState.promoCode,
+                            onValueChange = viewModel::updatePromoCode,
+                            label = { Text("Premium Promo Code") },
+                            placeholder = { Text("Enter promo code for testers") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Redeem,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            singleLine = true,
+                            isError = uiState.promoCodeError != null,
+                            supportingText = uiState.promoCodeError?.let { {
+                                Text(it, color = MaterialTheme.colorScheme.error)
+                            } } ?: { Text("Premium app purchase promo code") },
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                            )
+                        )
+                    }
+
+                    // Testing Instructions field
+                    OutlinedTextField(
+                        value = uiState.testingInstructions,
+                        onValueChange = viewModel::updateTestingInstructions,
+                        label = { Text("Testing Instructions") },
+                        placeholder = { Text("Provide steps for testing or applying promo code") },
+                        leadingIcon = {
+                            Icon(
+                                Icons.Default.Assignment,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        },
+                        minLines = 3,
+                        maxLines = 5,
+                        supportingText = { Text("Steps to apply promo or test your app's features") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outline,
+                        )
+                    )
+
+
                     // Editable info card
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -219,7 +325,7 @@ fun EditRequestScreen(
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
-                                "Updating request...",
+                                if (uiState.isRequestLoaded) "Fetching Request..." else "Updating Request...",
                                 style = MaterialTheme.typography.bodyLarge
                             )
                         }

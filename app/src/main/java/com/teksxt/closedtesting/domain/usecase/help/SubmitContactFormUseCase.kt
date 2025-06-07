@@ -1,5 +1,6 @@
 package com.teksxt.closedtesting.domain.usecase.help
 
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.teksxt.closedtesting.core.util.Resource
 import kotlinx.coroutines.tasks.await
@@ -8,14 +9,14 @@ import javax.inject.Singleton
 
 @Singleton
 class SubmitContactFormUseCase @Inject constructor(
+    private val auth: FirebaseAuth,
     private val firestore: FirebaseFirestore
 ) {
     suspend operator fun invoke(
         name: String,
         email: String,
         subject: String,
-        message: String,
-        userId: String
+        message: String
     ): Resource<Unit> {
         return try {
             // Validate inputs
@@ -41,7 +42,7 @@ class SubmitContactFormUseCase @Inject constructor(
                 "email" to email,
                 "subject" to subject,
                 "message" to message,
-                "userId" to userId,
+                "userId" to auth.uid,
                 "timestamp" to com.google.firebase.Timestamp.now(),
                 "status" to "pending"
             )

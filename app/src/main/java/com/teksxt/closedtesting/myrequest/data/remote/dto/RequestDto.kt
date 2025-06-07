@@ -51,7 +51,7 @@ data class RequestDto(
     @PropertyName("testerIds")
     val testerIds: List<String>? = null,
 
-    @PropertyName("isPublic")
+    @PropertyName("public")
     val isPublic: Boolean = false,
 
     @PropertyName("testDays")

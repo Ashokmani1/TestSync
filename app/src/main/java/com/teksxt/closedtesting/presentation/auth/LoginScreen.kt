@@ -1,5 +1,9 @@
 package com.teksxt.closedtesting.presentation.auth
 
+import android.app.Activity
+import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -26,6 +30,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -34,7 +39,11 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
+import com.google.android.gms.common.api.ApiException
 import com.teksxt.closedtesting.R
+import com.teksxt.closedtesting.data.auth.GoogleSignInHelper
 
 @Composable
 fun LoginScreen(
@@ -44,7 +53,48 @@ fun LoginScreen(
     viewModel: LoginViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
     val scrollState = rememberScrollState()
+
+    val context = LocalContext.current
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            try {
+                val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                val account = task.getResult(ApiException::class.java)
+                val idToken = account.idToken
+
+                if (idToken != null) {
+                    viewModel.handleGoogleSignInResult(idToken)
+                } else {
+                    viewModel.handleGoogleSignInError("No ID token received")
+                }
+            } catch (e: ApiException) {
+                Log.e("LoginScreen", "Google sign-in failed: ${e.statusCode}")
+                viewModel.handleGoogleSignInError("Sign-in failed: ${getGoogleSignInErrorMessage(e.statusCode)}")
+            }
+        } else {
+            Log.d("LoginScreen", "Google sign-in canceled")
+            viewModel.handleGoogleSignInError("Sign-in canceled")
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.events.collect { event ->
+            when (event) {
+                is LoginEvent.LaunchGoogleSignIn -> {
+                    val googleSignInHelper = GoogleSignInHelper(context)
+                    googleSignInLauncher.launch(googleSignInHelper.googleSignInClient.signInIntent)
+                }
+                is LoginEvent.NavigateToHome -> {
+                    onLoginSuccess()
+                }
+            }
+        }
+    }
 
     LaunchedEffect(uiState.loginSuccess) {
         if (uiState.loginSuccess) {
@@ -181,7 +231,7 @@ fun LoginScreen(
             // Modern Login Button with elevation and better shape
             ElevatedButton(
                 onClick = { viewModel.login() },
-                enabled = !uiState.isLoading && uiState.email.isNotEmpty() && uiState.password.isNotEmpty(),
+                enabled = !uiState.isLoading && uiState.email.isNotEmpty() && uiState.password.isNotEmpty() && !uiState.isGoogleSignInLoading ,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -232,6 +282,8 @@ fun LoginScreen(
             // Modern Google Sign In Button
             OutlinedButton(
                 onClick = { viewModel.signInWithGoogle() },
+                enabled = !uiState.isGoogleSignInLoading &&
+                        !uiState.isLoading,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
@@ -251,17 +303,31 @@ fun LoginScreen(
                     )
                 )
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_google),
-                    contentDescription = "Google Icon",
-                    modifier = Modifier.size(24.dp),
-                    tint = Color.Unspecified
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    "Continue with Google",
-                    style = MaterialTheme.typography.titleMedium
-                )
+                if (uiState.isGoogleSignInLoading) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        "Signing in...",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_google),
+                        contentDescription = "Google Icon",
+                        modifier = Modifier.size(24.dp),
+                        tint = Color.Unspecified
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        "Continue with Google",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
             }
 
             // Sign Up link with better styling
@@ -283,10 +349,20 @@ fun LoginScreen(
                     Text(
                         text = "Sign Up",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (uiState.isLoading || uiState.isGoogleSignInLoading) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
                         modifier = Modifier
-                            .clickable { onNavigateToSignup() }
-                            .padding(horizontal = 4.dp) // Minimal touch target padding
+                            .clickable(
+                                enabled = !uiState.isLoading && !uiState.isGoogleSignInLoading
+                            ) {
+                                if (!uiState.isLoading && !uiState.isGoogleSignInLoading) {
+                                    onNavigateToSignup()
+                                }
+                            }
+                            .padding(horizontal = 4.dp)
                     )
                 }
             }
@@ -321,5 +397,16 @@ fun LoginScreen(
                 }
             }
         }
+    }
+}
+
+private fun getGoogleSignInErrorMessage(statusCode: Int): String
+{
+    return when (statusCode) {
+        GoogleSignInStatusCodes.SIGN_IN_CANCELLED -> "Sign-in cancelled"
+        GoogleSignInStatusCodes.NETWORK_ERROR -> "Network error. Please check your internet connection"
+        GoogleSignInStatusCodes.SIGN_IN_FAILED -> "Sign-in failed. Please try again"
+        GoogleSignInStatusCodes.SIGN_IN_REQUIRED -> "Sign-in required. Please try again"
+        else -> "Google sign-in failed (error code: $statusCode)"
     }
 }

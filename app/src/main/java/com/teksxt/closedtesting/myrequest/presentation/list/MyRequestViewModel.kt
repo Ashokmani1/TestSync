@@ -42,7 +42,7 @@ class MyRequestViewModel @Inject constructor(
     val searchQuery = _searchQuery.asStateFlow()
 
     // Filter state
-    private val _selectedFilter = MutableStateFlow(RequestFilter.ACTIVE)
+    private val _selectedFilter = MutableStateFlow(RequestFilter.ALL)
     val selectedFilter = _selectedFilter.asStateFlow()
 
     // Store app details for each request

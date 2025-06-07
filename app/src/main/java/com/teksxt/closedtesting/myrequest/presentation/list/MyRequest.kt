@@ -27,8 +27,12 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.outlined.DateRange
+import androidx.compose.material.icons.outlined.Notifications
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
@@ -72,6 +76,8 @@ import com.teksxt.closedtesting.R
 import com.teksxt.closedtesting.core.presentation.component.AnimatedPreloader
 import com.teksxt.closedtesting.core.presentation.component.ShimmerLoadingScreen
 import com.teksxt.closedtesting.myrequest.presentation.list.component.EnhancedRequestList
+import com.teksxt.closedtesting.notifications.NotificationsViewModel
+import com.teksxt.closedtesting.presentation.auth.EnhancedEmailVerificationBanner
 import com.teksxt.closedtesting.presentation.navigation.Screen
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -87,7 +93,8 @@ enum class RequestFilter(val displayName: String) {
 @Composable
 fun MyRequestScreen(
     navController: NavController,
-    viewModel: MyRequestViewModel = hiltViewModel()
+    viewModel: MyRequestViewModel = hiltViewModel(),
+    notificationViewModel: NotificationsViewModel = hiltViewModel(),
 ) {
     val filteredRequests by viewModel.filteredRequests.collectAsState()
     val appDetails by viewModel.appDetails.collectAsState()
@@ -105,6 +112,8 @@ fun MyRequestScreen(
 
     val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
 
+    val unreadCount by notificationViewModel.unreadCount.collectAsState()
+
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         topBar = {
@@ -112,10 +121,13 @@ fun MyRequestScreen(
                 title = "My Requests",
                 subtitle = "Manage your testing requests",
                 searchQuery = searchQuery,
+                unreadCount = unreadCount,
                 onSearchQueryChange = viewModel::onSearchQueryChange,
                 isSearchExpanded = isSearchExpanded,
                 onSearchExpandChange = { isSearchExpanded = it },
-                scrollBehavior = scrollBehavior
+                onNotificationClick = {
+                    navController.navigate(Screen.Notifications.route)
+                }
             )
         },
         floatingActionButton = {
@@ -148,6 +160,7 @@ fun MyRequestScreen(
                 modifier = Modifier.align(Alignment.TopCenter)
             ) {
                 Column {
+
                     // Search and Filter Section
                     // Only show filter section (search is now in TopAppBar)
                     FilterSection(
@@ -163,6 +176,8 @@ fun MyRequestScreen(
                     )
 
                     Spacer(Modifier.height(8.dp))
+
+                    EnhancedEmailVerificationBanner(navController)
 
                     // Content area
                     if (isLoading && !isRefreshing) {
@@ -198,10 +213,11 @@ fun ExploreStyleTopBar(
     title: String,
     subtitle: String,
     searchQuery: String,
+    unreadCount: Int,
     onSearchQueryChange: (String) -> Unit,
     isSearchExpanded: Boolean,
     onSearchExpandChange: (Boolean) -> Unit,
-    scrollBehavior: TopAppBarScrollBehavior
+    onNotificationClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
@@ -243,6 +259,38 @@ fun ExploreStyleTopBar(
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
                 )
+            }
+
+            if (!isSearchExpanded) {
+                IconButton(
+                    onClick = onNotificationClick,
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 56.dp) // Position it to the left of search button
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+                ) {
+                    BadgedBox(
+                        badge = {
+                            if (unreadCount > 0) {
+                                Badge {
+                                    Text(
+                                        text = if (unreadCount > 99) "99+" else unreadCount.toString(),
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Notifications,
+                            contentDescription = "Notifications",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
             }
 
             // Title - shown only when search is not expanded

@@ -7,6 +7,7 @@ import com.teksxt.closedtesting.myrequest.data.local.dao.AssignedTesterDao
 import com.teksxt.closedtesting.myrequest.data.local.dao.RequestDao
 import com.teksxt.closedtesting.data.local.dao.UserDao
 import com.teksxt.closedtesting.explore.data.local.dao.AppDao
+import com.teksxt.closedtesting.notifications.data.local.dao.NotificationDao
 import com.teksxt.closedtesting.picked.data.local.dao.PickedAppDao
 import dagger.Module
 import dagger.Provides
@@ -57,5 +58,12 @@ object DatabaseModule {
     fun providePickedAppDao(db: TestSyncDatabase): PickedAppDao
     {
         return db.pickedAppDao()
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationDao(db: TestSyncDatabase): NotificationDao
+    {
+        return db.notificationDao()
     }
 }

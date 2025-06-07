@@ -22,4 +22,5 @@ interface RequestRepository {
     suspend fun assignUserToApp(appId: String)
     suspend fun getAssignedTesters(requestId: String): Result<Map<Int, List<AssignedTester>>>
     suspend fun updateTesterDayStatus(requestId: String, testerId: String, dayNumber: Int, status: TestingStatus): Result<Unit>
+    suspend fun getTesterDayStatus(requestId: String, testerId: String, dayNumber: Int): Result<TestingStatus>
 }

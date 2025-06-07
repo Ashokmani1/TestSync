@@ -23,9 +23,6 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE userId = :userId")
     suspend fun getUserById(userId: String): UserEntity?
 
-    @Query("SELECT * FROM users WHERE userId = :userId")
-    fun getUserByIdFlow(userId: String): Flow<UserEntity?>
-
     @Query("UPDATE users SET onboardingCompleted = :isOnboarded WHERE userId = :userId")
     suspend fun updateUserOnboardingStatus(userId: String, isOnboarded: Boolean)
 
@@ -34,7 +31,4 @@ interface UserDao {
 
     @Query("DELETE FROM users WHERE userId = :userId")
     suspend fun deleteUser(userId: String)
-
-    @Query("SELECT * FROM users WHERE isModifiedLocally = 1")
-    suspend fun getModifiedUsers(): List<UserEntity>
 }

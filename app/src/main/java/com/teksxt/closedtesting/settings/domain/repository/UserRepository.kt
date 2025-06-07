@@ -14,4 +14,7 @@ interface UserRepository {
     suspend fun syncUserData()
     suspend fun updateFCMToken(userId: String, token: String): Result<Unit>
     suspend fun updateUserLastActive(): Result<Unit>
+    suspend fun updatePushNotificationsPreference(enabled: Boolean): Result<Unit>
+    suspend fun updateTermsAcceptance(userId: String, termsAcceptance: HashMap<String, Any>): Result<Unit>
+    suspend fun getUserTermsAcceptance(userId: String): Result<Map<String, Any>?>
 }

@@ -1,6 +1,8 @@
 package com.teksxt.closedtesting.core.util
 
+import com.teksxt.closedtesting.explore.domain.model.App
 import com.teksxt.closedtesting.myrequest.domain.model.Request
+import com.teksxt.closedtesting.picked.data.local.entity.PickedAppEntity
 import java.util.Calendar
 import java.util.Date
 import kotlin.math.max
@@ -71,6 +73,75 @@ object ProgressUtils {
 
         val createdAt = request.createdAt ?: return 1
         val testingDays = request.testingDays.takeIf { it > 0 } ?: return 1
+
+        // Create calendar instances for proper timezone handling
+        val createdCalendar = Calendar.getInstance()
+        val currentCalendar = Calendar.getInstance()
+
+        // Set to creation timestamp
+        createdCalendar.timeInMillis = createdAt
+
+        // Zero out time portions for accurate day calculation
+        createdCalendar.set(Calendar.HOUR_OF_DAY, 0)
+        createdCalendar.set(Calendar.MINUTE, 0)
+        createdCalendar.set(Calendar.SECOND, 0)
+        createdCalendar.set(Calendar.MILLISECOND, 0)
+
+        currentCalendar.set(Calendar.HOUR_OF_DAY, 0)
+        currentCalendar.set(Calendar.MINUTE, 0)
+        currentCalendar.set(Calendar.SECOND, 0)
+        currentCalendar.set(Calendar.MILLISECOND, 0)
+
+        // Calculate elapsed days
+        val startDay = createdCalendar.timeInMillis
+        val endDay = currentCalendar.timeInMillis
+        val elapsedDays = ((endDay - startDay) / (24 * 60 * 60 * 1000)).toInt()
+
+        // Current day is elapsed days + 1 (since day 1 is the start day)
+        val currentDay = elapsedDays + 1
+
+        // Limit current day to the maximum testing days
+        return min(currentDay, testingDays)
+    }
+
+    fun calculateCurrentTestDay(pickedApp: PickedAppEntity, maxDays: Int): Int {
+        // Create calendar instances for proper timezone handling
+        val pickedCalendar = Calendar.getInstance()
+        val currentCalendar = Calendar.getInstance()
+
+        // Set to picked timestamp
+        pickedCalendar.timeInMillis = pickedApp.pickedAt
+
+        // Zero out time portions for accurate day calculation
+        pickedCalendar.set(Calendar.HOUR_OF_DAY, 0)
+        pickedCalendar.set(Calendar.MINUTE, 0)
+        pickedCalendar.set(Calendar.SECOND, 0)
+        pickedCalendar.set(Calendar.MILLISECOND, 0)
+
+        currentCalendar.set(Calendar.HOUR_OF_DAY, 0)
+        currentCalendar.set(Calendar.MINUTE, 0)
+        currentCalendar.set(Calendar.SECOND, 0)
+        currentCalendar.set(Calendar.MILLISECOND, 0)
+
+        // Calculate elapsed days
+        val startDay = pickedCalendar.timeInMillis
+        val endDay = currentCalendar.timeInMillis
+        val elapsedDays = ((endDay - startDay) / (24 * 60 * 60 * 1000)).toInt()
+
+        // Current day is elapsed days + 1 (since day 1 is the start day)
+        val currentDay = elapsedDays + 1
+
+        // Limit current day to the maximum testing days
+        return min(currentDay, maxDays)
+    }
+
+    fun calculateCurrentDay(request: App?): Int
+    {
+        if (request == null) return 1
+        if (request.status.lowercase() == "completed") return request.testingDays ?: 0
+
+        val createdAt = request.createdAt ?: return 1
+        val testingDays = (request.testingDays ?: 0).takeIf { it > 0 } ?: return 1
 
         // Create calendar instances for proper timezone handling
         val createdCalendar = Calendar.getInstance()

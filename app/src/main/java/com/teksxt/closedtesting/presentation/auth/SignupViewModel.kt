@@ -25,6 +25,7 @@ data class SignupUiState(
     val passwordError: String? = null,
     val termsError: String? = null,
     val isLoading: Boolean = false,
+    val isGoogleSignInLoading: Boolean = false,
     val signupSuccess: Boolean = false,
     val errorMessage: String? = null
 )
@@ -121,24 +122,24 @@ class SignupViewModel @Inject constructor(
 
     fun signUpWithGoogle() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isGoogleSignInLoading = true, errorMessage = null) }
 
             try {
                 val result = signInWithGoogleUseCase()
                 if (result.isSuccess) {
                     _uiState.update { it.copy(
-                        isLoading = false,
+                        isGoogleSignInLoading = false,
                         signupSuccess = true
                     ) }
                 } else {
                     _uiState.update { it.copy(
-                        isLoading = false,
+                        isGoogleSignInLoading = false,
                         errorMessage = result.exceptionOrNull()?.message ?: "Google sign-up failed"
                     ) }
                 }
             } catch (e: Exception) {
                 _uiState.update { it.copy(
-                    isLoading = false,
+                    isGoogleSignInLoading = false,
                     errorMessage = e.message ?: "An unexpected error occurred"
                 ) }
             }

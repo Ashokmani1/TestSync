@@ -16,9 +16,7 @@ interface ChatRepository {
 
     suspend fun sendReminderMessage(requestId: String, dayNumber: Int?, testerId: String): Result<String>
 
-    suspend fun setUserTypingStatus(chatId: String, userId: String, isTyping: Boolean): Result<Unit>
-
-    suspend fun createFeedbackMessage(requestId: String, testerId: String, dayNumber: Int, content: String): Result<ChatMessage>
-
     suspend fun sendBulkReminders(requestId: String, dayNumber: Int?, testerIds: List<String>): Result<Int>
+
+    suspend fun deleteMessage(messageId: String): Result<Unit>
 }

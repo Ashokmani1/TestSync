@@ -318,6 +318,8 @@ fun ModernPickedAppItem(
 ) {
     var visible by remember { mutableStateOf(false) }
 
+    val displayStatus = pickedApp.getDisplayStatus()
+
     LaunchedEffect(Unit) {
         kotlinx.coroutines.delay(animationDelay.toLong())
         visible = true
@@ -341,7 +343,7 @@ fun ModernPickedAppItem(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(4.dp)
-                        .background(getStatusColor(pickedApp.status))
+                        .background(getStatusColor(displayStatus))
                 )
 
                 Row(
@@ -354,7 +356,7 @@ fun ModernPickedAppItem(
                     AppIcon(
                         iconUrl = pickedApp.iconUrl,
                         appName = pickedApp.name,
-                        status = pickedApp.status
+                        status = displayStatus
                     )
 
                     Spacer(modifier = Modifier.width(16.dp))
@@ -403,12 +405,6 @@ fun ModernPickedAppItem(
                                 text = "Day ${pickedApp.currentTestDay}",
                                 style = MaterialTheme.typography.bodySmall
                             )
-
-                            Text(
-                                text = "${(pickedApp.completionRate * 100).toInt()}% complete",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = getProgressColor(pickedApp.completionRate)
-                            )
                         }
                     }
 
@@ -422,45 +418,35 @@ fun ModernPickedAppItem(
                     }
                 }
 
-                // Tester count and category info
-                if (pickedApp.app != null) {
-                    Divider(modifier = Modifier.padding(horizontal = 16.dp))
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-//                        // Category chip
-//                        pickedApp.category?.let { category ->
-//                            SuggestionChip(
-//                                onClick = { },
-//                                label = { Text(category) },
-//                                modifier = Modifier.padding(end = 8.dp),
-//                                icon = {
-//                                    Icon(
-//                                        Icons.Default.Category,
-//                                        contentDescription = null,
-//                                        modifier = Modifier.size(18.dp)
-//                                    )
-//                                }
-//                            )
-//                        }
+//                // Tester count and category info
+//                if (pickedApp.app != null) {
+//                    Divider(modifier = Modifier.padding(horizontal = 16.dp))
 //
-//                        Spacer(modifier = Modifier.weight(1f))
-
-                        // Testers info
-                        val activeTesters = pickedApp.activeTesters ?: 0
-                        val totalTesters = pickedApp.totalTesters ?: 0
-
-                        Text(
-                            text = "$activeTesters/$totalTesters testers",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+//                    Row(
+//                        modifier = Modifier
+//                            .fillMaxWidth()
+//                            .padding(horizontal = 16.dp, vertical = 8.dp),
+//                        verticalAlignment = Alignment.CenterVertically
+//                    ) {
+////                        // Category chip
+////                        pickedApp.category?.let { category ->
+////                            SuggestionChip(
+////                                onClick = { },
+////                                label = { Text(category) },
+////                                modifier = Modifier.padding(end = 8.dp),
+////                                icon = {
+////                                    Icon(
+////                                        Icons.Default.Category,
+////                                        contentDescription = null,
+////                                        modifier = Modifier.size(18.dp)
+////                                    )
+////                                }
+////                            )
+////                        }
+////
+////                        Spacer(modifier = Modifier.weight(1f))
+//                    }
+//                }
             }
         }
     }
@@ -524,7 +510,6 @@ fun getStatusColor(status: String): Color {
     return when (status.uppercase()) {
         "ACTIVE" -> MaterialTheme.colorScheme.primary
         "COMPLETED" -> Color(0xFF4CAF50) // Green
-        "ABANDONED" -> Color(0xFFF44336) // Red
         else -> MaterialTheme.colorScheme.secondary
     }
 }

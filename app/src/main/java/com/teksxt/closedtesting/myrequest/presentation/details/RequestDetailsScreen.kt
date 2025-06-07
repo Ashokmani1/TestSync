@@ -1,7 +1,9 @@
 package com.teksxt.closedtesting.myrequest.presentation.details
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -63,14 +65,16 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavController
+import com.teksxt.closedtesting.explore.domain.model.App
 import com.teksxt.closedtesting.myrequest.domain.model.Request
+import com.teksxt.closedtesting.myrequest.presentation.details.component.AdditionalDetailsCard
 import com.teksxt.closedtesting.myrequest.presentation.details.component.AppHeaderCard
 import com.teksxt.closedtesting.myrequest.presentation.details.component.ModernTestingDaysAndTesterSection
 import com.teksxt.closedtesting.myrequest.presentation.details.component.QuickActionButtons
 import kotlinx.coroutines.flow.collectLatest
-import androidx.core.net.toUri
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -180,6 +184,7 @@ fun RequestDetailsScreen(
             MainContent(
                 viewModel = viewModel,
                 request = request!!,
+                appDetails = appDetails,
                 selectedDay = selectedDay,
                 progress = animatedProgress,
                 scrollState = scrollState,
@@ -190,6 +195,14 @@ fun RequestDetailsScreen(
                         context.startActivity(intent)
                     } catch (e: Exception) {
                         Toast.makeText(context, "Couldn't open Play Store", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                onTestingJoinLinkClick = {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW, appDetails?.testApkUrl?.toUri())
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Couldn't open link", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onGoogleGroupUrlClick = {
@@ -298,16 +311,21 @@ private fun AppDetailsTopBar(
 private fun MainContent(
     viewModel: RequestDetailsViewModel,
     request: Request,
+    appDetails: App?,
     selectedDay: Int,
     progress: Float,
     scrollState: LazyListState,
     onDaySelected: (Int) -> Unit,
     onViewPlayStore: () -> Unit,
+    onTestingJoinLinkClick: () -> Unit,
     onViewTesters: () -> Unit,
     onGoogleGroupUrlClick: () -> Unit,
     navController: NavController,
     modifier: Modifier = Modifier
 ) {
+
+    val context = LocalContext.current
+
     LazyColumn(
         state = scrollState,
         modifier = modifier.fillMaxSize(),
@@ -326,12 +344,28 @@ private fun MainContent(
             // Quick action buttons
             QuickActionButtons(
                 onPlayStoreClick = onViewPlayStore,
+                onTestingJoinLinkClick = onTestingJoinLinkClick,
                 onTestersClick = onViewTesters,
                 onGoogleGroupUrlClick = onGoogleGroupUrlClick,
                 testingDays = request.testingDays,
                 testerCount = "${request.currentTestersCount}",
                 modifier = Modifier.padding(horizontal = 16.dp)
             )
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+            AdditionalDetailsCard(
+                appDetails = appDetails,
+                onCopyPromoCode = { promoCode ->
+                    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("Promo Code", promoCode)
+                    clipboardManager.setPrimaryClip(clip)
+                    Toast.makeText(context, "Promo code copied to clipboard", Toast.LENGTH_SHORT).show()
+                },
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
         }
 
         // Only show testing days section if there are testing days
@@ -353,6 +387,7 @@ private fun MainContent(
         }
     }
 }
+
 
 @Composable
 private fun LoadingContent(modifier: Modifier = Modifier) {

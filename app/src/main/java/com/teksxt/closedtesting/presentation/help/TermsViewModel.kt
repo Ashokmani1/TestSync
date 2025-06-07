@@ -1,30 +1,168 @@
 package com.teksxt.closedtesting.presentation.help
 
+import android.app.Application
+import android.os.Build
+import android.util.Log
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.firestore.FieldValue
+import com.teksxt.closedtesting.TestSyncApp
+import com.teksxt.closedtesting.data.repository.UserPreferencesRepository
+import com.teksxt.closedtesting.domain.repository.AuthRepository
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
+import com.teksxt.closedtesting.util.DeviceInfoProvider
+import dagger.hilt.android.internal.Contexts.getApplication
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel
-class TermsViewModel @Inject constructor() : ViewModel() {
+class TermsViewModel @Inject constructor(
+    private val userRepository: UserRepository,
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val authRepository: AuthRepository
+) : ViewModel() {
 
     private val _uiState = MutableStateFlow(TermsUiState())
     val uiState = _uiState.asStateFlow()
 
+    private val _events = MutableSharedFlow<TermsEvent>()
+    val events = _events.asSharedFlow()
+
     init {
         loadTerms()
+        checkTermsAcceptanceStatus()
     }
 
     fun acceptTerms() {
         viewModelScope.launch {
-            // In a real app, this would call a use case to record the user's acceptance
-            // For now, just print to console
-            println("Terms accepted by user")
+            try {
+                _uiState.update { it.copy(isAccepting = true) }
+
+                // 1. Get current user
+                val userId = authRepository.getCurrentUser()?.id
+
+                // 2. Create acceptance record with metadata
+                val termsAcceptance = hashMapOf(
+                    "version" to uiState.value.version,
+                    "acceptedAt" to FieldValue.serverTimestamp(),
+                    "deviceInfo" to getDeviceInfo()
+                )
+
+                // 3. Record in Firestore (if logged in)
+                if (userId != null) {
+                    userRepository.updateTermsAcceptance(userId, termsAcceptance)
+                        .onSuccess {
+                            Log.d("TermsViewModel", "Terms acceptance recorded for user $userId")
+                        }
+                        .onFailure { e ->
+                            Log.e("TermsViewModel", "Failed to record terms acceptance: ${e.message}", e)
+                        }
+                }
+
+                // 4. Always store locally (for both logged-in and anonymous users)
+                userPreferencesRepository.setTermsAccepted(true)
+                userPreferencesRepository.setAcceptedTermsVersion(uiState.value.version)
+                userPreferencesRepository.setTermsAcceptanceTimestamp(System.currentTimeMillis())
+
+                // 5. Update UI state
+                _uiState.update {
+                    it.copy(
+                        isAccepting = false,
+                        hasAcceptedTerms = true,
+                        showAcceptButton = false
+                    )
+                }
+
+                // 6. Emit success event
+                _events.emit(TermsEvent.TermsAccepted)
+
+            } catch (e: Exception) {
+                Log.e("TermsViewModel", "Error accepting terms: ${e.message}", e)
+                _uiState.update {
+                    it.copy(
+                        isAccepting = false,
+                        error = "Could not save terms acceptance: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun checkTermsAcceptanceStatus() {
+        viewModelScope.launch {
+            try {
+                // 1. First check local preferences for faster response
+                userPreferencesRepository.isTermsAccepted
+                    .first()
+                    .let { accepted ->
+                        if (accepted) {
+                            // Check if the accepted version matches current version
+                            val acceptedVersion = userPreferencesRepository.getAcceptedTermsVersion().first()
+                            val isCurrentVersion = acceptedVersion == uiState.value.version
+
+                            _uiState.update {
+                                it.copy(
+                                    hasAcceptedTerms = isCurrentVersion,
+                                    showAcceptButton = !isCurrentVersion
+                                )
+                            }
+                        } else {
+                            // If not accepted locally, show the accept button
+                            _uiState.update { it.copy(showAcceptButton = true) }
+                        }
+                    }
+
+                // 2. If logged in, double-check with server data
+                val userId = authRepository.getCurrentUser()?.id
+                if (userId != null) {
+                    userRepository.getUserTermsAcceptance(userId)
+                        .onSuccess { serverAcceptance ->
+                            if (serverAcceptance != null) {
+                                val serverVersion = serverAcceptance["version"] as? String
+                                val isCurrentVersion = serverVersion == uiState.value.version
+
+                                _uiState.update {
+                                    it.copy(
+                                        hasAcceptedTerms = isCurrentVersion,
+                                        showAcceptButton = !isCurrentVersion
+                                    )
+                                }
+                            }
+                        }
+                }
+            } catch (e: Exception) {
+                Log.e("TermsViewModel", "Error checking terms status: ${e.message}", e)
+            }
+        }
+    }
+
+    fun clearError() {
+        _uiState.update { it.copy(error = null) }
+    }
+
+    private fun getDeviceInfo(): Map<String, String> {
+        return try {
+            val context = TestSyncApp.instance
+            mapOf(
+                "deviceModel" to "${Build.MANUFACTURER} ${Build.MODEL}",
+                "osVersion" to "Android ${Build.VERSION.RELEASE}",
+                "appVersion" to try {
+                    DeviceInfoProvider(context).getAppVersion()
+                } catch (e: Exception) {
+                    "Unknown"
+                }
+            )
+        } catch (e: Exception) {
+            mapOf("error" to "Could not collect device info")
         }
     }
 
@@ -91,12 +229,20 @@ class TermsViewModel @Inject constructor() : ViewModel() {
     }
 }
 
+sealed class TermsEvent {
+    object TermsAccepted : TermsEvent()
+}
+
+// Update the UI state
 data class TermsUiState(
     val isLoading: Boolean = false,
+    val isAccepting: Boolean = false,
     val sections: List<TermsSection> = emptyList(),
     val effectiveDate: String = "",
     val version: String = "",
-    val showAcceptButton: Boolean = false
+    val showAcceptButton: Boolean = false,
+    val hasAcceptedTerms: Boolean = false,
+    val error: String? = null
 )
 
 data class TermsSection(

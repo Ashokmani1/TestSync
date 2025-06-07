@@ -3,7 +3,7 @@ package com.teksxt.closedtesting.service
 import android.util.Log
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
-import com.teksxt.closedtesting.domain.model.NotificationData
+import com.teksxt.closedtesting.domain.model.Notification
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
@@ -12,7 +12,7 @@ class NotificationService @Inject constructor(private val firestore: FirebaseFir
     /**
      * Send notification to a specific user
      */
-    suspend fun sendNotification(userId: String, notification: NotificationData): Result<Unit> {
+    suspend fun sendNotification(userId: String, notification: Notification): Result<Unit> {
         return try {
             // Get the user's FCM token
             val userDoc = firestore.collection("users")
@@ -35,6 +35,7 @@ class NotificationService @Inject constructor(private val firestore: FirebaseFir
                 "type" to notification.type,
                 "testerId" to notification.testerId,
                 "channelId" to notification.channelId,
+                "userId" to notification.userId,
                 "createdAt" to FieldValue.serverTimestamp(),
                 "status" to "pending"
             )
@@ -61,7 +62,7 @@ class NotificationService @Inject constructor(private val firestore: FirebaseFir
             ?: throw Exception("FCM token not found for user $userId")
     }
 
-    suspend fun sendBulkNotifications(userIds: List<String>, notification: NotificationData): Result<Int>
+    suspend fun sendBulkNotifications(userIds: List<String>, notification: Notification): Result<Int>
     {
         var successCount = 0
 

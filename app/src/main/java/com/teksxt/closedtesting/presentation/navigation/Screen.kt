@@ -7,6 +7,8 @@ sealed class Screen(val route: String) {
     data object Signup : Screen("signup")
     data object ForgotPassword : Screen("forgot_password")
     data object Onboarding : Screen("onboarding")
+    object EmailVerification : Screen("email_verification")
+    object PremiumSupport : Screen("premium_support")
 
     // Main
     data object Dashboard : Screen("dashboard")
@@ -25,10 +27,7 @@ sealed class Screen(val route: String) {
     
     // Explore
     data object ExploreApps : Screen("explore_apps")
-    
-    // User related
-    data object DeveloperProfile : Screen("developer_profile")
-    data object Profile : Screen("profile")
+
     data object Notifications : Screen("notifications")
     data object Settings : Screen("settings")
     

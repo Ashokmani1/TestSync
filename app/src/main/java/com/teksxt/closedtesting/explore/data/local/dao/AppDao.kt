@@ -23,14 +23,8 @@ interface AppDao {
     @Query("SELECT * FROM apps WHERE appId = :appId")
     suspend fun getAppById(appId: String): AppEntity?
 
-    @Query("SELECT * FROM apps WHERE appId = :appId")
-    fun getAppByIdFlow(appId: String): Flow<AppEntity?>
-
     @Query("SELECT * FROM apps WHERE ownerUserId = :userId")
     suspend fun getAppsByOwnerId(userId: String): List<AppEntity>
-
-    @Query("SELECT * FROM apps WHERE ownerUserId = :userId")
-    fun getAppsByOwnerIdFlow(userId: String): Flow<List<AppEntity>>
 
     @Query("SELECT * FROM apps WHERE status IN (:statuses)")
     suspend fun getAppsByStatus(statuses: List<String>): List<AppEntity>

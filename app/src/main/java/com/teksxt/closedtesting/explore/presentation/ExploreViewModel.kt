@@ -7,6 +7,7 @@ import com.teksxt.closedtesting.explore.domain.repo.AppRepository
 import com.teksxt.closedtesting.myrequest.domain.repo.RequestRepository
 import com.teksxt.closedtesting.picked.domain.repo.PickedAppRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -27,7 +28,9 @@ class ExploreViewModel @Inject constructor(
     private val _errorState = MutableStateFlow<String?>(null)
     val errorState = _errorState.asStateFlow()
 
-    private val _userOwnApps = MutableStateFlow<Set<String>>(emptySet())
+    private val _pickingAppId = MutableStateFlow<String?>(null)
+    val pickingAppId: StateFlow<String?> = _pickingAppId.asStateFlow()
+
 
     init {
         loadApps()
@@ -68,12 +71,40 @@ class ExploreViewModel @Inject constructor(
     fun pickApp(appId: String) {
         viewModelScope.launch {
             try {
-                pickedAppRepository.pickApp(appId)
+                // Set the picking state
+                _pickingAppId.value = appId
+
+                // Call the repository
+                val result = pickedAppRepository.pickApp(appId)
+
+                // Handle result
+                if (result.isSuccess) {
+                    // Update the local state immediately
+                    _uiState.update { currentState ->
+                        currentState.copy(
+                            pickedApps = currentState.pickedApps + appId
+                        )
+                    }
+
+                    // Show success message
+                    _errorState.value = "App picked successfully!"
+
+                    // Refresh apps list to get latest counts
+                    delay(500) // Small delay to ensure Firestore update completes
+                    refreshApps()
+                } else {
+                    // Handle error
+                    _errorState.value = result.exceptionOrNull()?.message ?: "Failed to pick app"
+                }
             } catch (e: Exception) {
-                _errorState.value = "Failed to pick app: ${e.localizedMessage}"
+                _errorState.value = e.message ?: "An error occurred"
+            } finally {
+                // Clear picking state
+                _pickingAppId.value = null
             }
         }
     }
+
 
     fun refreshApps() {
         loadApps()
@@ -122,8 +153,7 @@ class ExploreViewModel @Inject constructor(
             ?.filter { app ->
                 when (filter) {
                     ExploreFilter.ALL -> true
-                    ExploreFilter.AVAILABLE -> (app.activeTesters ?: 0) < (app.totalTesters ?: 0)
-                    ExploreFilter.FULL -> (app.activeTesters ?: 0) >= (app.totalTesters ?: 0)
+                    ExploreFilter.AVAILABLE -> (app.activeTesters ?: 0) < (app.totalTesters ?: 0) // TODO check this.
                 }
             }
 
@@ -143,5 +173,4 @@ data class ExploreUiState(
 enum class ExploreFilter(val displayName: String) {
     ALL("All"),
     AVAILABLE("Available"),
-    FULL("Full")
 }

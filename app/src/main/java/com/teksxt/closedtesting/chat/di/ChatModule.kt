@@ -20,13 +20,12 @@ object ChatModule {
     @Provides
     @Singleton
     fun provideChatRepository(
-        firebaseAuth: FirebaseAuth,
         firestore: FirebaseFirestore,
         storage: FirebaseStorage,
         auth: FirebaseAuth,
         userRepository: UserRepository,
         notificationService: NotificationService
     ): ChatRepository {
-        return FirebaseChatRepository(firebaseAuth, firestore, storage, auth, userRepository, notificationService)
+        return FirebaseChatRepository(firestore, storage, auth, userRepository, notificationService)
     }
 }

@@ -15,7 +15,7 @@ fun BottomNavBar(
     onTabSelected: (Int) -> Unit,
     tabs: List<Triple<ImageVector, String, String>>
 ) {
-    NavigationBar(windowInsets = WindowInsets(0,0,0,0)) {
+    NavigationBar {
         tabs.forEachIndexed { index, tab ->
             NavigationBarItem(
                 icon = {

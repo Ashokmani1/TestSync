@@ -3,8 +3,9 @@ package com.teksxt.closedtesting.di
 import android.content.Context
 import com.google.firebase.auth.FirebaseAuth
 import com.teksxt.closedtesting.data.auth.GoogleSignInHelper
-import com.teksxt.closedtesting.data.preferences.UserPreferences
+import com.teksxt.closedtesting.data.local.TestSyncDatabase
 import com.teksxt.closedtesting.data.repository.AuthRepositoryImpl
+import com.teksxt.closedtesting.data.repository.UserPreferencesRepository
 import com.teksxt.closedtesting.domain.repository.AuthRepository
 import com.teksxt.closedtesting.presentation.auth.SessionManager
 import com.teksxt.closedtesting.service.FCMTokenManager
@@ -32,12 +33,13 @@ object AuthModule {
     @Singleton
     fun provideAuthRepository(
         firebaseAuth: FirebaseAuth,
-        userPreferences: UserPreferences,
         googleSignInHelper: GoogleSignInHelper,
         userRepository: UserRepository,
         fcmTokenManager: FCMTokenManager,
-        sessionManager: SessionManager
+        sessionManager: SessionManager,
+        userPreferencesRepository: UserPreferencesRepository,
+        database: TestSyncDatabase
     ): AuthRepository {
-        return AuthRepositoryImpl(firebaseAuth, userPreferences, googleSignInHelper, userRepository, fcmTokenManager, sessionManager)
+        return AuthRepositoryImpl(firebaseAuth, googleSignInHelper, userRepository, fcmTokenManager, sessionManager, userPreferencesRepository, database)
     }
 }

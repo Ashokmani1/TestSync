@@ -1,33 +1,37 @@
 package com.teksxt.closedtesting.data.repository
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseAuthRecentLoginRequiredException
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.auth.UserProfileChangeRequest
 import com.google.firebase.firestore.FieldValue
 import com.teksxt.closedtesting.data.auth.GoogleSignInHelper
-import com.teksxt.closedtesting.data.preferences.UserPreferences
+import com.teksxt.closedtesting.data.local.TestSyncDatabase
 import com.teksxt.closedtesting.domain.repository.AuthRepository
 import com.teksxt.closedtesting.presentation.auth.SessionManager
 import com.teksxt.closedtesting.service.FCMTokenManager
 import com.teksxt.closedtesting.settings.domain.model.User
 import com.teksxt.closedtesting.settings.domain.repository.UserRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 class AuthRepositoryImpl @Inject constructor(
     private val firebaseAuth: FirebaseAuth,
-    private val userPreferences: UserPreferences,
     private val googleSignInHelper: GoogleSignInHelper,
     private val userRepository: UserRepository,
     private val fcmTokenManager: FCMTokenManager,
-    private val sessionManager: SessionManager
+    private val sessionManager: SessionManager,
+    private val userPreferencesRepository: UserPreferencesRepository,
+    private val database: TestSyncDatabase
 ) : AuthRepository {
 
     override suspend fun login(email: String, password: String): Result<Unit> {
         return try {
             val result = firebaseAuth.signInWithEmailAndPassword(email, password).await()
             result.user?.let { user ->
-                userPreferences.saveUserId(user.uid)
 
                 // Use UserRepository to ensure both Firestore and Room are updated
                 val existingUser = userRepository.getUserById(user.uid).getOrNull()
@@ -72,8 +76,6 @@ class AuthRepositoryImpl @Inject constructor(
                     .build()
                 user.updateProfile(profileUpdates).await()
 
-                userPreferences.saveUserId(user.uid)
-
                 // Create user in both Firestore and Room via UserRepository
                 val newUser = User(
                     id = user.uid,
@@ -81,7 +83,8 @@ class AuthRepositoryImpl @Inject constructor(
                     name = name,
                     photoUrl = null,
                     createdAt = FieldValue.serverTimestamp(),
-                    isOnboarded = false
+                    isOnboarded = false,
+                    termsAccepted = true
                 )
                 userRepository.createUser(newUser)
 
@@ -104,9 +107,7 @@ class AuthRepositoryImpl @Inject constructor(
             val authResult = firebaseAuth.signInWithCredential(credential).await()
 
             authResult.user?.let { user ->
-                userPreferences.saveUserId(user.uid)
-
-                // Use UserRepository to update or create user
+                // Update or create user
                 val existingUser = userRepository.getUserById(user.uid).getOrNull()
                 if (existingUser != null) {
                     // Update existing user
@@ -124,67 +125,48 @@ class AuthRepositoryImpl @Inject constructor(
                         name = user.displayName ?: "",
                         photoUrl = user.photoUrl?.toString(),
                         createdAt = FieldValue.serverTimestamp(),
-                        isOnboarded = false
+                        isOnboarded = false,
+                        termsAccepted = false
                     )
                     userRepository.createUser(newUser)
                 }
 
                 fcmTokenManager.registerFCMToken()
-
                 sessionManager.startTrackingUserActivity()
-
-                // Ensure data consistency
                 userRepository.syncUserData()
             }
 
             Result.success(Unit)
         } catch (e: Exception) {
+            Log.e("AuthRepository", "Google sign-in error: ${e.message}", e)
             Result.failure(e)
         }
     }
 
     override suspend fun signInWithGoogleSilent(): Result<Unit> {
         return try {
-            // Try to get ID token from the last signed-in Google account
+            // Check if user has previously signed in
+            if (!googleSignInHelper.hasPreviousSignIn()) {
+                Log.d("AuthRepository", "No previous Google sign-in detected")
+                return Result.failure(SilentSignInFailedException())
+            }
+
+            // Try to get ID token
             val idToken = googleSignInHelper.getIdToken()
-            
+
             if (idToken != null) {
-                // We have a valid ID token, use it to authenticate with Firebase
-                val credential = GoogleAuthProvider.getCredential(idToken, null)
-                val result = firebaseAuth.signInWithCredential(credential).await()
-                
-                result.user?.let { user ->
+                Log.d("AuthRepository", "Got valid ID token, authenticating with Firebase")
 
-                    userPreferences.saveUserId(user.uid)
-                    
-                    // Get or create user profile
-                    val existingUser = userRepository.getUserById(user.uid).getOrNull()
-                    if (existingUser != null) {
-                        // Update last login time
-                        userRepository.updateUser(existingUser.copy(
-                            lastActive = FieldValue.serverTimestamp()
-                        ))
-                    } else {
-                        // Create new user if not found
-                        val newUser = User(
-                            id = user.uid,
-                            email = user.email ?: "",
-                            name = user.displayName ?: (user.email ?: "").substringBefore('@'),
-                            photoUrl = user.photoUrl?.toString(),
-                            createdAt = FieldValue.serverTimestamp(),
-                            isOnboarded = false
-                        )
-                        userRepository.createUser(newUser)
-                    }
-                }
-
-                fcmTokenManager.registerFCMToken()
-                
-                Result.success(Unit)
+                // Use the existing signInWithGoogle method
+                return signInWithGoogle(idToken)
             } else {
-                Result.failure(Exception("Silent sign-in failed"))
+                Log.w("AuthRepository", "Silent sign-in failed: No valid ID token")
+                // Clear any potentially stale state
+                googleSignInHelper.signOut()
+                return Result.failure(SilentSignInFailedException())
             }
         } catch (e: Exception) {
+            Log.e("AuthRepository", "Error during silent Google sign-in: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -198,6 +180,7 @@ class AuthRepositoryImpl @Inject constructor(
         }
     }
 
+    // TODO notication clear while logout
     override suspend fun logout(): Result<Unit> {
         return try {
             // First sync any pending local changes
@@ -212,13 +195,14 @@ class AuthRepositoryImpl @Inject constructor(
 
             sessionManager.stopTrackingUserActivity()
 
-            // TODO notication clear while logout
-            // Clear local user data
-            firebaseAuth.signOut()
-//            userPreferences.clear() // TODO chekc this
+            withContext(Dispatchers.IO) {
+                // Clear all tables in the database
+                database.clearAllTables()
+            }
 
-            // If we have a UserDao method to clear user cache, call it here
-            // userRepository.clearUserCache()
+            userPreferencesRepository.clearAllPreferences()
+
+            firebaseAuth.signOut()
 
             Result.success(Unit)
         } catch (e: Exception) {
@@ -232,4 +216,94 @@ class AuthRepositoryImpl @Inject constructor(
         return userRepository.getUserById(currentUserId).getOrNull()
     }
 
+
+    override suspend fun sendEmailVerificationLink(): Result<Unit> {
+        return try {
+            val currentUser = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("User not signed in"))
+
+            currentUser.sendEmailVerification().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun isEmailVerified(): Result<Boolean> {
+        return try {
+            val currentUser = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("User not signed in"))
+
+            // This returns the cached value, might not be up-to-date
+            val isVerified = currentUser.isEmailVerified
+            Result.success(isVerified)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun refreshCurrentUser(): Result<Unit> {
+        return try {
+            val currentUser = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("User not signed in"))
+
+            // This reloads the user details from Firebase, including verification status
+            currentUser.reload().await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun deleteAccount(): Result<Unit> {
+        return try {
+            val currentUser = firebaseAuth.currentUser
+                ?: return Result.failure(Exception("User not signed in"))
+
+            val userId = currentUser.uid
+
+            // 1. First make sure we have the latest auth session
+            currentUser.reload().await()
+
+            // 2. Some actions like account deletion require recent authentication
+            // If it fails due to credential timeout, we'll return an error
+            // that the UI can handle by prompting for re-authentication
+            try {
+                // 3. Delete the Firebase Auth user
+                currentUser.delete().await()
+
+                // 4. Attempt to clean up Firestore data
+                // (This should ideally be handled by Firebase Functions for security)
+//                try {
+//                    // Delete user document
+//                    firestore.collection("users").document(userId).delete().await()
+//
+//                    // Note: In a production app, you would use Firebase Cloud Functions
+//                    // to securely delete all of the user's data from Firestore
+//                } catch (e: Exception) {
+//                    Log.e("AuthRepository", "Error cleaning up Firestore data: ${e.message}")
+//                    // Continue with the process even if Firestore cleanup fails
+//                }
+
+                // 5. Clean up local data
+                withContext(Dispatchers.IO) {
+                    database.clearAllTables()
+                }
+
+                // 6. Clear preferences
+                userPreferencesRepository.clearAllPreferences()
+
+                Result.success(Unit)
+            } catch (e: FirebaseAuthRecentLoginRequiredException) {
+                // This exception means the user needs to re-authenticate before
+                // sensitive operations like account deletion
+                Result.failure(Exception("Please sign in again before deleting your account"))
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
 }
+
+class SilentSignInFailedException : Exception("Silent sign-in failed, interactive sign-in required")

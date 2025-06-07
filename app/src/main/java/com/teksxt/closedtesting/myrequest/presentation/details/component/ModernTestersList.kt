@@ -355,7 +355,7 @@ fun ModernTesterCard(
                 BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
             else null,
             onClick = {
-                navController.navigate("chat/${requestId}/${tester.id}/${dayNumber}")
+                navController.navigate("chat/${requestId}/${tester.id}/${dayNumber}?isRequestRiser=true")
             }
         ) {
             Column(
@@ -461,7 +461,7 @@ fun ModernTesterCard(
                     // Chat icon at the end of the row
                     IconButton(
                         onClick = {
-                            navController.navigate("chat/${requestId}/${tester.id}/${dayNumber}")
+                            navController.navigate("chat/${requestId}/${tester.id}/${dayNumber}?isRequestRiser=true")
                         },
                         modifier = Modifier.size(36.dp),
                         colors = IconButtonDefaults.iconButtonColors(

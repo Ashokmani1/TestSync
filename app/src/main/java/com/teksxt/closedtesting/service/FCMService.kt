@@ -22,6 +22,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.RemoteInput
 import com.teksxt.closedtesting.MainActivity
 import com.teksxt.closedtesting.R
+import kotlinx.coroutines.tasks.await
 
 @AndroidEntryPoint
 class FCMService : FirebaseMessagingService() {
@@ -228,23 +229,37 @@ class FCMService : FirebaseMessagingService() {
         notificationManager.notify(notificationId, notificationBuilder.build())
     }
 
-    private fun saveFCMTokenToFirestore(token: String)
-    {
+    private fun saveFCMTokenToFirestore(token: String) {
         // Wait for auth to be ready
         auth.addAuthStateListener { firebaseAuth ->
             val userId = firebaseAuth.currentUser?.uid
             if (userId != null) {
                 serviceScope.launch {
                     try {
-                        firestore.collection("users")
+                        // First, get the user document to check notification preference
+                        val userDoc = firestore.collection("users")
                             .document(userId)
-                            .update(mapOf("fcmToken" to token))
-                            .addOnSuccessListener {
-                                Log.d("FCMService", "FCM token updated successfully for user $userId")
-                            }
-                            .addOnFailureListener { e ->
-                                Log.e("FCMService", "Failed to update FCM token: ${e.message}")
-                            }
+                            .get()
+                            .await()
+
+                        // Check if push notifications are enabled
+                        val pushNotificationsEnabled = userDoc.getBoolean("pushNotifications") ?: true
+
+                        if (pushNotificationsEnabled) {
+                            // Only update the token if push notifications are enabled
+                            firestore.collection("users")
+                                .document(userId)
+                                .update(mapOf("fcmToken" to token))
+                                .await()
+                            Log.d("FCMService", "FCM token updated successfully for user $userId")
+                        } else {
+                            // If notifications are disabled, remove the token
+                            firestore.collection("users")
+                                .document(userId)
+                                .update(mapOf("fcmToken" to ""))
+                                .await()
+                            Log.d("FCMService", "FCM token cleared - notifications disabled for user $userId")
+                        }
                     } catch (e: Exception) {
                         Log.e("FCMService", "Error updating FCM token: ${e.message}")
                     }

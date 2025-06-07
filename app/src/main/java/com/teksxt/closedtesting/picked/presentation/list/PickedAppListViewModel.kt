@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.teksxt.closedtesting.explore.domain.model.App
 import com.teksxt.closedtesting.explore.domain.repo.AppRepository
+import com.teksxt.closedtesting.myrequest.domain.repo.RequestRepository
 import com.teksxt.closedtesting.picked.domain.model.PickedApp
 import com.teksxt.closedtesting.picked.domain.repo.PickedAppRepository
 import com.teksxt.closedtesting.util.Resource
@@ -15,7 +16,8 @@ import javax.inject.Inject
 @HiltViewModel
 class PickedAppListViewModel @Inject constructor(
     private val pickedAppRepository: PickedAppRepository,
-    private val appRepository: AppRepository
+    private val appRepository: AppRepository,
+    private val requestRepository: RequestRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(PickedAppListState())
@@ -33,6 +35,8 @@ class PickedAppListViewModel @Inject constructor(
     // Original unfiltered data
     private var allPickedApps = listOf<PickedAppWithDetails>()
 
+    private val requestIdCache = mutableMapOf<String, String>()
+
     init {
         loadPickedApps()
 
@@ -40,6 +44,41 @@ class PickedAppListViewModel @Inject constructor(
         combine(searchQuery, selectedFilter) { query, filter ->
             filterPickedApps(query, filter)
         }.launchIn(viewModelScope)
+    }
+
+    // Fetch testing status for a picked app
+    private fun fetchTesterDayStatus(pickedApp: PickedApp) {
+        viewModelScope.launch {
+            val appId = pickedApp.appId
+            val userId = pickedApp.userId
+            val dayNumber = pickedApp.currentTestDay
+
+            // First get the request ID for this app
+            if (!requestIdCache.containsKey(appId)) {
+                requestRepository.getRequestByAppID(appId).onSuccess { request ->
+                    request?.let {
+                        requestIdCache[appId] = it.id
+                    }
+                }
+            }
+
+            // If we have the request ID, fetch the tester day status
+            val requestId = requestIdCache[appId] ?: return@launch
+
+            requestRepository.getTesterDayStatus(requestId, userId, dayNumber).onSuccess { status ->
+                // Find the app in our list and update its status
+                val updatedList = allPickedApps.map { app ->
+                    if (app.id == pickedApp.id) {
+                        app.copy(testingStatus = status)
+                    } else {
+                        app
+                    }
+                }
+
+                allPickedApps = updatedList
+                filterPickedApps(_searchQuery.value, _selectedFilter.value)
+            }
+        }
     }
 
     fun onSearchQueryChange(query: String) {
@@ -77,6 +116,8 @@ class PickedAppListViewModel @Inject constructor(
 
                         // Fetch app details for each picked app
                         fetchAppDetails(pickedApps)
+
+                        pickedApps.forEach { fetchTesterDayStatus(it) }
                     }
                     is Resource.Error -> {
                         _state.value = _state.value.copy(
@@ -138,7 +179,6 @@ class PickedAppListViewModel @Inject constructor(
                 PickedAppFilter.ACTIVE -> app.status == "ACTIVE"
                 PickedAppFilter.COMPLETED -> app.status == "COMPLETED"
                 PickedAppFilter.PINNED -> app.isPinned
-                PickedAppFilter.HIGH_PROGRESS -> app.completionRate >= 0.75f
             }
 
             matchesQuery && matchesFilter
@@ -159,6 +199,5 @@ enum class PickedAppFilter(val displayName: String) {
     ALL("All"),
     ACTIVE("Active"),
     COMPLETED("Completed"),
-    PINNED("Pinned"),
-    HIGH_PROGRESS("High Progress")
+    PINNED("Pinned")
 }

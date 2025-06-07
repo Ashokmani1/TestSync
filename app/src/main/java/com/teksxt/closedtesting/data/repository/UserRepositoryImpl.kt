@@ -1,23 +1,29 @@
 package com.teksxt.closedtesting.data.repository
 
-import com.google.firebase.Timestamp
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.SetOptions
+import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.storage.FirebaseStorage
+import com.teksxt.closedtesting.TestSyncApp
 import com.teksxt.closedtesting.data.local.dao.UserDao
 import com.teksxt.closedtesting.data.local.entity.UserEntity
 import com.teksxt.closedtesting.data.remote.dto.UserDto
 import com.teksxt.closedtesting.settings.domain.model.User
 import com.teksxt.closedtesting.settings.domain.repository.UserRepository
+import com.teksxt.closedtesting.util.DeviceInfoProvider
 import com.teksxt.closedtesting.util.Resource
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.text.get
 
 @Singleton
 class UserRepositoryImpl @Inject constructor(
@@ -31,21 +37,61 @@ class UserRepositoryImpl @Inject constructor(
 
     override suspend fun createUser(user: User): Result<User> {
         return try {
-            // Create user in Firestore
+
+            val currentTimestamp = System.currentTimeMillis()
+            val userForRoom = user.copy(
+                createdAt = currentTimestamp,
+                lastActive = currentTimestamp
+            )
+
+
+
             val userDto = UserDto.fromUser(user)
             val userData = userDtoToMap(userDto).toMutableMap().apply {
                 // Add server timestamps
                 put("createdAt", FieldValue.serverTimestamp())
                 put("lastActive", FieldValue.serverTimestamp())
+                put("lastUpdated", FieldValue.serverTimestamp())
             }
-            usersCollection.document(user.id).set(userData).await()
+
+            if (user.termsAccepted)
+            {
+                val termsAcceptance = hashMapOf(
+                    "version" to DeviceInfoProvider(TestSyncApp.instance).getAppVersion(),
+                    "acceptedAt" to FieldValue.serverTimestamp(),
+                    "deviceInfo" to DeviceInfoProvider(TestSyncApp.instance).getDeviceInfo()
+                )
+
+                val userData = userData.toMutableMap().apply {
+                    put("termsAcceptance", termsAcceptance)
+                }
+
+                usersCollection.document(user.id).set(userData,  SetOptions.merge()).await()
+
+                firestore.collection("termsAcceptances")
+                    .document("${user.id}_${System.currentTimeMillis()}")
+                    .set(
+                        hashMapOf(
+                            "userId" to user.id,
+                            "acceptanceData" to termsAcceptance,
+                            "timestamp" to FieldValue.serverTimestamp(),
+                            "isInitialAcceptance" to true // Flag to indicate this was during signup
+                        )
+                    )
+                    .await()
+            }
+            else
+            {
+                usersCollection.document(user.id).set(userData,  SetOptions.merge()).await()
+            }
 
             // Save to Room database
-            val userEntity = UserEntity.fromDomainModel(user)
+            val userEntity = UserEntity.fromDomainModel(userForRoom)
             userDao.insertUser(userEntity)
 
-            Result.success(user)
+            Result.success(userForRoom)
         } catch (e: Exception) {
+            e.printStackTrace()
             Result.failure(e)
         }
     }
@@ -160,24 +206,37 @@ class UserRepositoryImpl @Inject constructor(
         return try {
             val userId = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("User not logged in"))
 
-            val updates = mutableMapOf<String, Any>("display_name" to name)
+            val updates = mutableMapOf<String, Any>("displayName" to name)
+
+            // Get the current remote user data to check for existing photo
+            val remoteDoc = usersCollection.document(userId).get().await()
+            val existingPhotoUrl = remoteDoc.getString("photoUrl")
 
             // Handle profile photo upload if provided
             if (photoUrl != null) {
-                // Extract file extension (jpg, png, etc.)
-                val fileExtension = photoUrl.substringAfterLast('.', "jpg")
+                // Delete old image if it exists and is a Firebase Storage URL
+                if (!existingPhotoUrl.isNullOrEmpty() && existingPhotoUrl.contains("firebasestorage")) {
+                    try {
+                        // Create storage reference from the URL
+                        val oldImageRef = storage.getReferenceFromUrl(existingPhotoUrl)
+                        oldImageRef.delete().await()
+                    } catch (e: Exception) {
+                        return Result.failure(e)
+                    }
+                }
 
-                // Create storage reference with unique filename
+                // Upload new image
+                val imageName = "${UUID.randomUUID()}.jpg"
                 val storageRef = storage.reference
                     .child("profile_images")
-                    .child("$userId/profile.$fileExtension")
+                    .child("$userId/$imageName")
 
                 // Upload image and get download URL
-                val uploadTask = storageRef.putFile(android.net.Uri.parse(photoUrl)).await()
-                val downloadUrl = uploadTask.storage.downloadUrl.await()
+                storageRef.putFile(android.net.Uri.parse(photoUrl)).await()
+                val downloadUrl = storageRef.downloadUrl.await()
 
                 // Add to updates
-                updates["photo_url"] = downloadUrl.toString()
+                updates["photoUrl"] = downloadUrl.toString()
             }
 
             // Update Firestore
@@ -245,6 +304,7 @@ class UserRepositoryImpl @Inject constructor(
         } catch (e: Exception) {
             // If we previously emitted Success with local data, don't emit Error
             // This preserves the offline-first approach
+            e.printStackTrace()
             emit(Resource.Error("Failed to fetch user: ${e.message}"))
         }
     }
@@ -305,6 +365,128 @@ class UserRepositoryImpl @Inject constructor(
         }
     }
 
+    override suspend fun updatePushNotificationsPreference(enabled: Boolean): Result<Unit> {
+        return try {
+            val userId = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("User not logged in"))
+
+            // Create a batch of updates for Firestore
+            val updates = mutableMapOf<String, Any?>(
+                "pushNotifications" to enabled
+            )
+
+            if (!enabled) {
+                updates["fcmToken"] = ""
+            } else {
+                try {
+                    // This is fire-and-forget, the token update will happen asynchronously
+                    FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            val token = task.result
+                            CoroutineScope(Dispatchers.IO).launch {
+                                try {
+                                    usersCollection.document(userId)
+                                        .update("fcmToken", token)
+                                        .await()
+
+                                    // Also update local database
+                                    val localUser = userDao.getUserById(userId)
+                                    if (localUser != null) {
+                                        val updatedUser = localUser.copy(fcmToken = token)
+                                        userDao.updateUser(updatedUser)
+                                    }
+                                } catch (e: Exception) {
+                                    Log.e("UserRepository", "Error updating FCM token: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e("UserRepository", "Error getting FCM token: ${e.message}")
+                }
+            }
+
+            // Update notification preference immediately
+            usersCollection.document(userId)
+                .update(updates)
+                .await()
+
+            // Update local database
+            val localUser = userDao.getUserById(userId)
+            if (localUser != null) {
+                val updatedUser = localUser.copy(
+                    pushNotifications = enabled,
+                    fcmToken = if (!enabled) "" else localUser.fcmToken,
+                    isModifiedLocally = true
+                )
+                userDao.updateUser(updatedUser)
+            }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun updateTermsAcceptance(userId: String, termsAcceptance: HashMap<String, Any>): Result<Unit> {
+        return try {
+            // Create a timestamped record of the terms acceptance with all metadata
+            val termsAcceptanceData = hashMapOf(
+                "termsAcceptance" to termsAcceptance,
+                "lastUpdated" to FieldValue.serverTimestamp()
+            )
+
+            // Update the user document in Firestore
+            usersCollection.document(userId)
+                .update(termsAcceptanceData)
+                .await()
+
+
+            firestore.collection("termsAcceptances")
+                .document("${userId}_${System.currentTimeMillis()}")
+                .set(
+                    hashMapOf(
+                        "userId" to userId,
+                        "acceptanceData" to termsAcceptance,
+                        "timestamp" to FieldValue.serverTimestamp()
+                    )
+                )
+                .await()
+
+            Log.d("UserRepository", "Terms acceptance updated for user $userId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e("UserRepository", "Error updating terms acceptance: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getUserTermsAcceptance(userId: String): Result<Map<String, Any>?> {
+        return try {
+            // Get user document from Firestore
+            val userDoc = usersCollection.document(userId).get().await()
+
+            if (!userDoc.exists()) {
+                Log.w("UserRepository", "User document not found for terms acceptance check: $userId")
+                return Result.success(null)
+            }
+
+            // Get the termsAcceptance field from the user document
+            val termsAcceptance = userDoc.get("termsAcceptance") as? Map<String, Any>
+
+            if (termsAcceptance == null) {
+                // User hasn't accepted terms yet
+                Log.d("UserRepository", "No terms acceptance found for user: $userId")
+                return Result.success(null)
+            }
+
+            // Return the terms acceptance data
+            Result.success(termsAcceptance)
+        } catch (e: Exception) {
+            Log.e("UserRepository", "Error getting terms acceptance: ${e.message}", e)
+            Result.failure(e)
+        }
+    }
+
     /**
      * Converts UserDto to a Map for Firestore operations.
      * Note: We exclude time fields that should use serverTimestamp()
@@ -320,26 +502,8 @@ class UserRepositoryImpl @Inject constructor(
             "emailVerified" to userDto.emailVerified,
             "accountStatus" to userDto.accountStatus,
             "onboardingCompleted" to userDto.onboardingCompleted,
-
-            // User devices
-            "devices" to userDto.devices,
-
-            // App owner fields
-            "companyName" to userDto.companyName,
-            "website" to userDto.website,
-            "submittedApps" to userDto.submittedApps,
-
-            // Preferences
-            "notificationPreferences" to userDto.notificationPreferences,
-            "emailNotifications" to userDto.emailNotifications,
             "pushNotifications" to userDto.pushNotifications,
-            "preferredLanguage" to userDto.preferredLanguage,
             "appTheme" to userDto.appTheme,
-
-            // Subscription info
-            "subscriptionTier" to userDto.subscriptionTier,
-            "subscriptionStatus" to userDto.subscriptionStatus,
-            "subscriptionExpiryDate" to userDto.subscriptionExpiryDate
         )
     }
 }

@@ -2,6 +2,7 @@ package com.teksxt.closedtesting.myrequest.presentation.details.component
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,12 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -40,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.teksxt.closedtesting.core.presentation.component.ActionButton
 import com.teksxt.closedtesting.core.presentation.component.getAppIconBackgroundColor
 import com.teksxt.closedtesting.myrequest.domain.model.Request
 
@@ -219,14 +223,18 @@ fun AppHeaderCard(
 @Composable
 fun QuickActionButtons(
     onPlayStoreClick: () -> Unit,
+    onTestingJoinLinkClick: () -> Unit,
     onTestersClick: () -> Unit,
     onGoogleGroupUrlClick: () -> Unit,
     testingDays: Int,
     testerCount: String,
     modifier: Modifier = Modifier
 ) {
+
+    val scrollState = rememberScrollState()
+
     Row(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         ActionButton(
@@ -236,61 +244,22 @@ fun QuickActionButtons(
         )
 
         ActionButton(
-            icon = Icons.Default.Group,
-            label = "$testerCount Testers",
-            onClick = onTestersClick
-        )
-
-        ActionButton(
-            icon = Icons.Default.DateRange,
-            label = "$testingDays Days"
+            icon = Icons.Default.Public,
+            label = "Web Link",
+            onClick = onTestingJoinLinkClick
         )
 
         ActionButton(
             icon = Icons.Default.Forum,
-            label = "Group",
+            label = "Google Group",
             onClick = onGoogleGroupUrlClick
         )
-    }
-}
 
-@Composable
-fun ActionButton(
-    icon: ImageVector,
-    label: String,
-    onClick: () -> Unit = {}
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(vertical = 16.dp, horizontal = 8.dp)
-    ) {
-        Box(
-            contentAlignment = Alignment.Center,
-            modifier = Modifier
-                .size(48.dp)
-                .background(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
-                    shape = CircleShape
-                )
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = label,
-                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                modifier = Modifier.size(24.dp)
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis
+        ActionButton(
+            icon = Icons.Default.Group,
+            label = "$testerCount Testers",
+            onClick = onTestersClick
         )
     }
 }
+

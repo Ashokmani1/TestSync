@@ -282,7 +282,7 @@ fun SignupScreen(
             val fieldsValid = !uiState.isLoading && uiState.name.isNotBlank() &&
                     uiState.email.isNotBlank() &&
                     uiState.password.isNotBlank() &&
-                    uiState.termsAccepted
+                    uiState.termsAccepted && !uiState.isGoogleSignInLoading
             // Modern Signup Button with elevation
             ElevatedButton(
                 onClick = { viewModel.signup() },
@@ -340,6 +340,7 @@ fun SignupScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(56.dp),
+                enabled = !uiState.isGoogleSignInLoading && !uiState.isLoading,
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = MaterialTheme.colorScheme.onBackground
@@ -356,17 +357,31 @@ fun SignupScreen(
                     )
                 )
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_google),
-                    contentDescription = "Google Icon",
-                    modifier = Modifier.size(24.dp),
-                    tint = Color.Unspecified
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    "Continue with Google",
-                    style = MaterialTheme.typography.titleMedium
-                )
+                if (uiState.isGoogleSignInLoading) {
+                    CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        "Signing in...",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_google),
+                        contentDescription = "Google Icon",
+                        modifier = Modifier.size(24.dp),
+                        tint = Color.Unspecified
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        "Continue with Google",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
             }
 
             // Login Link with better styling
@@ -388,9 +403,19 @@ fun SignupScreen(
                     Text(
                         text = "Log In",
                         style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.primary,
+                        color = if (uiState.isLoading || uiState.isGoogleSignInLoading) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.primary
+                        },
                         modifier = Modifier
-                            .clickable { onNavigateToLogin() }
+                            .clickable(
+                                enabled = !uiState.isLoading && !uiState.isGoogleSignInLoading
+                            ) {
+                                if (!uiState.isLoading && !uiState.isGoogleSignInLoading) {
+                                    onNavigateToLogin()
+                                }
+                            }
                             .padding(horizontal = 4.dp)
                     )
                 }

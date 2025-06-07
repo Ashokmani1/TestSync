@@ -15,5 +15,5 @@ data class ChatMessage(
 )
 
 enum class MessageType {
-    TEXT, IMAGE, REMINDER, FEEDBACK, SYSTEM
+    TEXT, IMAGE, REMINDER
 }

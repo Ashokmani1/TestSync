@@ -3,8 +3,6 @@ package com.teksxt.closedtesting.presentation.splash
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.teksxt.closedtesting.presentation.auth.SessionManager
-import com.teksxt.closedtesting.data.preferences.UserPreferencesManager
-import com.teksxt.closedtesting.service.FCMTokenManager
 import com.teksxt.closedtesting.settings.domain.repository.UserRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow

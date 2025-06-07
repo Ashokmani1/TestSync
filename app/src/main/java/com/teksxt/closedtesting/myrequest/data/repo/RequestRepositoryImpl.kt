@@ -282,7 +282,7 @@ class RequestRepositoryImpl @Inject constructor(
     override suspend fun assignTester(requestId: String, testerId: String): Result<Unit>
     {
         return try {
-            // First fetch the request to get testing days
+            // First fetch the request to get testing days and start date
             val requestDoc = requestsCollection.document(requestId).get().await()
             if (!requestDoc.exists()) {
                 return Result.failure(Exception("Request not found"))
@@ -290,6 +290,16 @@ class RequestRepositoryImpl @Inject constructor(
 
             val requestDto = requestDoc.toObject(RequestDto::class.java)
             val testingDays = requestDto?.testingDays ?: 1
+            val requestStartDateMillis = when (val ts = requestDto?.startDate) {
+                is Timestamp -> ts.seconds * 1000 + ts.nanoseconds / 1_000_000
+                is Long -> ts
+                else -> System.currentTimeMillis()
+            }
+
+            // Calculate current day based on start date
+            val now = System.currentTimeMillis()
+            val daysSinceStart = ((now - requestStartDateMillis) / (1000 * 60 * 60 * 24)).toInt()
+            val currentDay = (daysSinceStart + 1).coerceIn(1, testingDays)
 
             // 1. Update tester list in the main request document
             requestsCollection.document(requestId).update(
@@ -298,8 +308,8 @@ class RequestRepositoryImpl @Inject constructor(
                 "updatedAt", FieldValue.serverTimestamp()
             ).await()
 
-            // 2. Create tester document with day-by-day status tracking
-            val statusByDay = (1..testingDays).associate { day ->
+            // 2. Create tester document with status tracking only for current and remaining days
+            val statusByDay = (1..(currentDay- testingDays)).associate { day ->
                 day.toString() to TestingStatus.PENDING.name
             }
 
@@ -307,6 +317,7 @@ class RequestRepositoryImpl @Inject constructor(
                 "testerId" to testerId,
                 "assignedAt" to FieldValue.serverTimestamp(),
                 "statusByDay" to statusByDay,
+                "joinedOnDay" to currentDay,
                 "lastUpdated" to FieldValue.serverTimestamp()
             )
 
@@ -331,7 +342,7 @@ class RequestRepositoryImpl @Inject constructor(
                 )
                 requestDao.updateRequest(updatedRequest)
 
-                // 4. Create local assigned tester entities for each day
+                // 4. Create local assigned tester entities only for current and remaining days
                 val testerEntities = mutableListOf<AssignedTesterEntity>()
 
                 // Get tester info if available
@@ -341,7 +352,8 @@ class RequestRepositoryImpl @Inject constructor(
                     null
                 }
 
-                for (day in 1..testingDays) {
+                // Only create entries for current and future days
+                for (day in 1..(currentDay- testingDays)) {
                     testerEntities.add(
                         AssignedTesterEntity(
                             id = "${testerId}_${day}",
@@ -469,7 +481,7 @@ class RequestRepositoryImpl @Inject constructor(
                 }
 
                 // For each tester, create entries for all testing days
-                for (day in 1..testingDays) {
+                for (day in 1..testingDays - (testerDoc.get("joinedOnDay") as? Int ?: 0)) {
                     // Determine status based on statusByDay map
                     val statusString = statusByDay[day.toString()]
                     val status = when (statusString) {
@@ -531,7 +543,8 @@ class RequestRepositoryImpl @Inject constructor(
     }
 
     // Helper function to format timestamp
-    private fun formatTimestamp(timestamp: Timestamp?): String {
+    private fun formatTimestamp(timestamp: Timestamp?): String
+    {
         if (timestamp == null) return "N/A"
 
         val currentTime = System.currentTimeMillis()
@@ -547,12 +560,8 @@ class RequestRepositoryImpl @Inject constructor(
     }
 
 
-    override suspend fun updateTesterDayStatus(
-        requestId: String,
-        testerId: String,
-        dayNumber: Int,
-        status: TestingStatus
-    ): Result<Unit> {
+    override suspend fun updateTesterDayStatus(requestId: String, testerId: String, dayNumber: Int, status: TestingStatus): Result<Unit>
+    {
         return try {
             // Update status in Firestore
             firestore.collection("requests")
@@ -577,6 +586,48 @@ class RequestRepositoryImpl @Inject constructor(
             }
 
             Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    override suspend fun getTesterDayStatus(requestId: String, testerId: String, dayNumber: Int): Result<TestingStatus> {
+        return try {
+            // First check if we have this in local database
+            val entityId = "${testerId}_${dayNumber}"
+            val entity = assignedTesterDao.getAssignedTesterById(entityId)
+            if (entity != null) {
+                return Result.success(
+                    when (entity.testingStatus) {
+                        TestingStatus.COMPLETED.name -> TestingStatus.COMPLETED
+                        TestingStatus.IN_PROGRESS.name -> TestingStatus.IN_PROGRESS
+                        else -> TestingStatus.PENDING
+                    }
+                )
+            }
+
+            // If not in local DB, fetch from Firestore
+            val testerDoc = firestore.collection("requests")
+                .document(requestId)
+                .collection("testers")
+                .document(testerId)
+                .get()
+                .await()
+
+            if (!testerDoc.exists()) {
+                return Result.success(TestingStatus.PENDING)
+            }
+
+            val statusByDay = testerDoc.get("statusByDay") as? Map<String, String> ?: emptyMap()
+            val statusString = statusByDay[dayNumber.toString()]
+
+            val status = when (statusString) {
+                TestingStatus.COMPLETED.name -> TestingStatus.COMPLETED
+                TestingStatus.IN_PROGRESS.name -> TestingStatus.IN_PROGRESS
+                else -> TestingStatus.PENDING
+            }
+
+            Result.success(status)
         } catch (e: Exception) {
             Result.failure(e)
         }

@@ -75,7 +75,7 @@ fun ModernTestingDaysAndTesterSection(
 
     val (selectedFilter, setSelectedFilter) = remember { mutableStateOf(TesterFilter.NOT_COMPLETED) }
 
-    val isSendingReminders by viewModel.isLoading.collectAsStateWithLifecycle()
+    val isSendingReminders by viewModel.sendBulkReminderLoading.collectAsStateWithLifecycle()
 
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -150,6 +150,8 @@ fun ModernTestingDaysAndTesterSection(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            val allTesters = viewModel.getAssignedTesters(selectedDay)
+
             // Send reminders button & status indicator
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -183,7 +185,7 @@ fun ModernTestingDaysAndTesterSection(
 
                 Spacer(modifier = Modifier.weight(1f))
 
-                if (request.currentDay == selectedDay && selectedFilter == TesterFilter.NOT_COMPLETED)
+                if (allTesters.isNotEmpty() && request.currentDay == selectedDay && selectedFilter == TesterFilter.NOT_COMPLETED)
                 {
                     // Send reminders button
                     FilledTonalButton(
@@ -232,7 +234,7 @@ fun ModernTestingDaysAndTesterSection(
                     .horizontalScroll(rememberScrollState()),
             ) {
                 // Get count for each filter type
-                val allTesters = viewModel.getAssignedTesters(selectedDay)
+
                 val completedCount = allTesters.count { it.hasCompleted }
                 val pendingCount = allTesters.size - completedCount
 

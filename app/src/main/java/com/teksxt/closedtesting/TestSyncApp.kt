@@ -14,12 +14,18 @@ import javax.inject.Inject
 @HiltAndroidApp
 class TestSyncApp : Application() {
 
+    companion object {
+        lateinit var instance: TestSyncApp
+            private set
+    }
+
     @Inject
     lateinit var sessionManager: SessionManager
 
     override fun onCreate() {
         super.onCreate()
 
+        instance = this
         // Initialize Firebase
         FirebaseApp.initializeApp(this)
 

@@ -1,9 +1,13 @@
 package com.teksxt.closedtesting.presentation.navigation
 
+import com.teksxt.closedtesting.presentation.onboarding.OnboardingScreen
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Task
 import androidx.compose.runtime.Composable
@@ -12,6 +16,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -22,18 +28,20 @@ import androidx.navigation.navArgument
 import com.teksxt.closedtesting.chat.presentation.ChatScreen
 import com.teksxt.closedtesting.explore.presentation.ExploreScreen
 import com.teksxt.closedtesting.myrequest.presentation.create.CreateRequestScreen
+import com.teksxt.closedtesting.myrequest.presentation.create.premium.PremiumSupportScreen
 import com.teksxt.closedtesting.myrequest.presentation.details.RequestDetailsScreen
 import com.teksxt.closedtesting.myrequest.presentation.edit.EditRequestScreen
 import com.teksxt.closedtesting.myrequest.presentation.list.MyRequestScreen
+import com.teksxt.closedtesting.notifications.NotificationsScreen
 import com.teksxt.closedtesting.picked.presentation.details.PickedAppDetailsScreen
 import com.teksxt.closedtesting.picked.presentation.list.PickedAppListScreen
+import com.teksxt.closedtesting.presentation.auth.EmailVerificationScreen
 import com.teksxt.closedtesting.presentation.auth.ForgotPasswordScreen
 import com.teksxt.closedtesting.presentation.auth.LoginScreen
 import com.teksxt.closedtesting.presentation.auth.SignupScreen
 import com.teksxt.closedtesting.presentation.help.HelpSupportScreen
 import com.teksxt.closedtesting.presentation.help.PrivacyPolicyScreen
 import com.teksxt.closedtesting.presentation.help.TermsConditionsScreen
-import com.teksxt.closedtesting.presentation.onboarding.OnboardingScreen
 import com.teksxt.closedtesting.presentation.onboarding.OnboardingViewModel
 import com.teksxt.closedtesting.presentation.splash.SplashScreen
 import com.teksxt.closedtesting.settings.presentation.SettingsScreen
@@ -55,13 +63,13 @@ fun NavGraph(
         Screen.Onboarding.route,
         Screen.HelpSupport.route,
         Screen.TermsConditions.route,
-        Screen.PrivacyPolicy.route,
-        "chat"
+        "chat", Screen.PremiumSupport.route, Screen.EmailVerification.route, Screen.Notifications.route
     )
     
     val shouldShowBottomBar = !outsideMainFlowRoutes.contains(currentRoute) && 
         currentRoute != "create_request" && currentRoute?.contains("request_details") != true &&
-            currentRoute?.contains("assigned_users") != true && currentRoute?.startsWith("chat") != true && currentRoute?.startsWith("edit_request") != true
+            currentRoute?.contains("assigned_users") != true && currentRoute?.startsWith("chat") != true
+            && currentRoute?.startsWith("edit_request") != true && currentRoute?.startsWith(Screen.PrivacyPolicy.route) != true
 
     // Remember the selected tab
     var selectedTab by remember { mutableIntStateOf(0) }
@@ -114,7 +122,7 @@ fun NavGraph(
         NavHost(
             navController = navController,
             startDestination = startDestination,
-            modifier = Modifier.padding(innerPadding)
+            modifier = Modifier.padding(top = innerPadding.calculateTopPadding(), bottom = if (shouldShowBottomBar) 0.dp else innerPadding.calculateBottomPadding())
         ) {
             // Splash and auth flow
             composable("splash") {
@@ -137,29 +145,66 @@ fun NavGraph(
                 )
             }
 
-            // Auth routes
-            composable(route = Screen.Login.route) {
-                LoginScreen(
-                    onNavigateToSignup = { navController.navigate(Screen.Signup.route) },
-                    onNavigateToForgotPassword = { navController.navigate(Screen.ForgotPassword.route) },
-                    onLoginSuccess = { 
+            composable(
+                route = Screen.EmailVerification.route
+            ) {
+                EmailVerificationScreen(
+                    onBackToLogin = {
+                        navController.navigateUp()
+                    },
+                    onContinue = {
+                        // Navigate to home or onboarding
                         navController.navigate("my_requests") {
-                            popUpTo(Screen.Login.route) { inclusive = true }
+                            popUpTo(Screen.EmailVerification.route) { inclusive = true }
                         }
                     }
                 )
             }
-            
-            composable(route = Screen.Signup.route) {
-                SignupScreen(
-                    onNavigateToLogin = { navController.navigate(Screen.Login.route) },
-                    onSignupSuccess = {
-                        navController.navigate(Screen.Onboarding.route) {
-                            popUpTo(Screen.Signup.route) { inclusive = true }
+
+            // Auth routes
+            composable(route = Screen.Login.route) {
+                LoginScreen(
+                    onNavigateToSignup = {
+                        navController.navigate(Screen.Signup.route) {
+                            popUpTo(Screen.Login.route) { inclusive = true }
+                            launchSingleTop = true
                         }
                     },
-                    onNavigateToTerms = { navController.navigate(Screen.TermsConditions.route) },
-                    onNavigateToPrivacy = { navController.navigate(Screen.PrivacyPolicy.route + "?isFromSignupFlow=true") }
+                    onNavigateToForgotPassword = {
+                        navController.navigate(Screen.ForgotPassword.route)
+                    },
+                    onLoginSuccess = {
+                        navController.navigate("my_requests") {
+                            popUpTo(navController.graph.startDestinationId) {
+                                inclusive = true
+                            }
+                        }
+                    }
+                )
+            }
+
+
+            composable(route = Screen.Signup.route) {
+                SignupScreen(
+                    onNavigateToLogin = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(Screen.Signup.route) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onSignupSuccess = {
+                        navController.navigate(Screen.Onboarding.route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onNavigateToTerms = {
+                        navController.navigate(Screen.TermsConditions.route)
+                    },
+                    onNavigateToPrivacy = {
+                        navController.navigate(Screen.PrivacyPolicy.route + "?isFromSignupFlow=true")
+                    }
                 )
             }
             
@@ -202,6 +247,25 @@ fun NavGraph(
                         navController.navigate("my_requests") {
                             popUpTo("my_requests") { inclusive = true }
                         }
+                    },
+                    onNavigateToPremiumSupport = {
+                        navController.navigate(Screen.PremiumSupport.route)
+                    }
+                )
+            }
+
+            composable(route = Screen.PremiumSupport.route) {
+                val context = LocalContext.current
+                PremiumSupportScreen(
+                    onNavigateBack = { navController.navigateUp() },
+                    onContactSupport = {
+                        // Launch email intent or in-app support chat
+                        val intent = Intent(Intent.ACTION_SENDTO).apply {
+                            data = Uri.parse("mailto:support@testsync.com")
+                            putExtra(Intent.EXTRA_SUBJECT, "Premium Testing Service Inquiry")
+                            putExtra(Intent.EXTRA_TEXT, "Hi, I'm interested in the premium testing service for my app.")
+                        }
+                        context.startActivity(intent)
                     }
                 )
             }
@@ -251,7 +315,10 @@ fun NavGraph(
                 arguments = listOf(navArgument("pickedAppId") { type = NavType.StringType })
             ) {
                 PickedAppDetailsScreen(
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    onNavigateToChatScreen = { requestID, ownerId, dayNumber ->
+                        navController.navigate("chat/${requestID}/${ownerId}/${dayNumber}?isRequestRiser=false")
+                    }
                 )
             }
 
@@ -266,16 +333,24 @@ fun NavGraph(
                 SettingsScreen(
                     onNavigateToHelp = { navController.navigate(Screen.HelpSupport.route) },
                     onNavigateToTerms = { navController.navigate(Screen.TermsConditions.route) },
-                    onNavigateToPrivacy = { navController.navigate(Screen.PrivacyPolicy.route) }
+                    onNavigateToPrivacy = { navController.navigate(Screen.PrivacyPolicy.route) },
+                    onLogout = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                inclusive = true
+                            }
+                        }
+                    },
+                    onNavigateToEmailVerificationScreen = {
+                        navController.navigate(Screen.EmailVerification.route)
+                    }
                 )
             }
 
             // Help and legal screens
             composable(route = Screen.HelpSupport.route) {
                 HelpSupportScreen(
-                    onNavigateBack = { navController.popBackStack() },
-                    onNavigateToTerms = { navController.navigate(Screen.TermsConditions.route) },
-                    onNavigateToPrivacy = { navController.navigate(Screen.PrivacyPolicy.route) }
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
 
@@ -296,29 +371,47 @@ fun NavGraph(
             ) { backStackEntry ->
                 val isFromSignupFlow = backStackEntry.arguments?.getBoolean("isFromSignupFlow") ?: false
                 PrivacyPolicyScreen(
+                    onNavigateToLogin = {
+                        navController.navigate(Screen.Login.route) {
+                            popUpTo(navController.graph.startDestinationId) {
+                                inclusive = true
+                            }
+                        }
+                    },
                     onNavigateBack = { navController.popBackStack() },
                     isFromSignupFlow = isFromSignupFlow
                 )
             }
 
             composable(
-                route = "chat/{requestId}/{testerId}/{dayNumber}",
+                route = "chat/{requestId}/{testerId}/{dayNumber}?isRequestRiser={isRequestRiser}",
                 arguments = listOf(
                     navArgument("requestId") { type = NavType.StringType },
                     navArgument("testerId") { type = NavType.StringType },
-                    navArgument("dayNumber") { type = NavType.StringType }
+                    navArgument("dayNumber") { type = NavType.IntType },
+                    navArgument("isRequestRiser") {
+                        type = NavType.BoolType
+                        defaultValue = false
+                    }
                 )
             ) { backStackEntry ->
                 val requestId = backStackEntry.arguments?.getString("requestId") ?: ""
                 val testerId = backStackEntry.arguments?.getString("testerId") ?: ""
-                val dayNumber = backStackEntry.arguments?.getString("dayNumber")?.toIntOrNull() ?: 1
+                val dayNumber = backStackEntry.arguments?.getInt("dayNumber") ?: 1
+                val isRequestRiser = backStackEntry.arguments?.getBoolean("isRequestRiser") ?: false
 
                 ChatScreen(
-                    requestId = requestId,
                     testerId = testerId,
                     dayNumber = dayNumber,
+                    isRequestRiser = isRequestRiser,
                     onNavigateBack = { navController.popBackStack() }
                 )
+            }
+
+            composable(
+                route = Screen.Notifications.route
+            ) {
+                NotificationsScreen(navController = navController)
             }
         }
     }

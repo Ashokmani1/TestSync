@@ -6,21 +6,21 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.storage.FirebaseStorage
 import com.teksxt.closedtesting.data.local.dao.UserDao
-import com.teksxt.closedtesting.presentation.auth.SessionManager
-import com.teksxt.closedtesting.myrequest.data.local.dao.AssignedTesterDao
-import com.teksxt.closedtesting.myrequest.data.local.dao.RequestDao
-import com.teksxt.closedtesting.data.preferences.UserPreferences
-import com.teksxt.closedtesting.data.preferences.UserPreferencesManager
-import com.teksxt.closedtesting.myrequest.data.repo.RequestRepositoryImpl
-import com.teksxt.closedtesting.data.repository.SubscriptionRepositoryImpl
+import com.teksxt.closedtesting.data.repository.UserPreferencesRepository
 import com.teksxt.closedtesting.data.repository.UserRepositoryImpl
-import com.teksxt.closedtesting.myrequest.domain.repo.RequestRepository
-import com.teksxt.closedtesting.domain.repository.SubscriptionRepository
-import com.teksxt.closedtesting.settings.domain.repository.UserRepository
 import com.teksxt.closedtesting.explore.data.local.dao.AppDao
 import com.teksxt.closedtesting.explore.data.repo.AppRepositoryImpl
 import com.teksxt.closedtesting.explore.domain.repo.AppRepository
+import com.teksxt.closedtesting.myrequest.data.local.dao.AssignedTesterDao
+import com.teksxt.closedtesting.myrequest.data.local.dao.RequestDao
+import com.teksxt.closedtesting.myrequest.data.repo.RequestRepositoryImpl
+import com.teksxt.closedtesting.myrequest.domain.repo.RequestRepository
+import com.teksxt.closedtesting.notifications.data.NotificationRepositoryImpl
+import com.teksxt.closedtesting.notifications.data.local.dao.NotificationDao
+import com.teksxt.closedtesting.notifications.domain.repository.NotificationRepository
+import com.teksxt.closedtesting.presentation.auth.SessionManager
 import com.teksxt.closedtesting.service.NotificationService
+import com.teksxt.closedtesting.settings.domain.repository.UserRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -63,12 +63,6 @@ object AppModule {
     ): NotificationService {
         return NotificationService(firestore)
     }
-    
-    @Provides
-    @Singleton
-    fun provideUserPreferences(@ApplicationContext context: Context): UserPreferences {
-        return UserPreferences(context)
-    }
 
 
     @Provides
@@ -83,14 +77,6 @@ object AppModule {
         return UserRepositoryImpl(firestore, storage, auth, userDao)
     }
 
-    @Provides
-    @Singleton
-    fun provideSubscriptionRepository(
-        firestore: FirebaseFirestore,
-    ): SubscriptionRepository
-    {
-        return SubscriptionRepositoryImpl(firestore)
-    }
 
     @Provides
     @Singleton
@@ -117,19 +103,28 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideUserPreferencesManager(
-        @ApplicationContext context: Context
-    ): UserPreferencesManager {
-        return UserPreferencesManager(context)
+    fun provideSessionManager(
+        auth: FirebaseAuth,
+        userRepository: UserRepository
+    ): SessionManager {
+        return SessionManager(auth, userRepository)
     }
 
     @Provides
     @Singleton
-    fun provideSessionManager(
+    fun provideUserPreferencesRepository(
+        @ApplicationContext context: Context
+    ): UserPreferencesRepository {
+        return UserPreferencesRepository(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideNotificationRepository(
+        firestore: FirebaseFirestore,
         auth: FirebaseAuth,
-        preferencesManager: UserPreferencesManager,
-        userRepository: UserRepository
-    ): SessionManager {
-        return SessionManager(auth, preferencesManager, userRepository)
+        notificationDao: NotificationDao
+    ): NotificationRepository {
+        return NotificationRepositoryImpl(firestore, auth, notificationDao)
     }
 }

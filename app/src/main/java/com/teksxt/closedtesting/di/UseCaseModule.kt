@@ -1,10 +1,15 @@
 package com.teksxt.closedtesting.di
 
-import com.teksxt.closedtesting.domain.repository.*
-import com.teksxt.closedtesting.domain.usecase.auth.*
-import com.teksxt.closedtesting.domain.usecase.subscription.*
-import com.teksxt.closedtesting.domain.usecase.validation.*
-import com.teksxt.closedtesting.settings.domain.repository.UserRepository
+import com.teksxt.closedtesting.domain.repository.AuthRepository
+import com.teksxt.closedtesting.domain.usecase.auth.GetCurrentUserUseCase
+import com.teksxt.closedtesting.domain.usecase.auth.LoginUseCase
+import com.teksxt.closedtesting.domain.usecase.auth.LogoutUseCase
+import com.teksxt.closedtesting.domain.usecase.auth.SignInWithGoogleUseCase
+import com.teksxt.closedtesting.domain.usecase.auth.SignUpUseCase
+import com.teksxt.closedtesting.domain.usecase.validation.ValidateEmailUseCase
+import com.teksxt.closedtesting.domain.usecase.validation.ValidateNameUseCase
+import com.teksxt.closedtesting.domain.usecase.validation.ValidatePasswordUseCase
+import com.teksxt.closedtesting.domain.usecase.validation.ValidateUrlUseCase
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -71,23 +76,4 @@ object UseCaseModule {
         return ValidateUrlUseCase()
     }
 
-
-    // Subscription Use Cases
-    @Provides
-    @Singleton
-    fun provideGetSubscriptionStatusUseCase(subscriptionRepository: SubscriptionRepository): GetSubscriptionStatusUseCase {
-        return GetSubscriptionStatusUseCase(subscriptionRepository)
-    }
-
-    @Provides
-    @Singleton
-    fun providePurchaseSubscriptionUseCase(subscriptionRepository: SubscriptionRepository): PurchaseSubscriptionUseCase {
-        return PurchaseSubscriptionUseCase(subscriptionRepository)
-    }
-
-    @Provides
-    @Singleton
-    fun provideValidateSubscriptionUseCase(subscriptionRepository: SubscriptionRepository): ValidateSubscriptionUseCase {
-        return ValidateSubscriptionUseCase(subscriptionRepository)
-    }
 }

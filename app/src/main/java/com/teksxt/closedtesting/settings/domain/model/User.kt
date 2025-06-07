@@ -1,7 +1,6 @@
 package com.teksxt.closedtesting.settings.domain.model
 
 import com.google.firebase.Timestamp
-import com.google.firebase.firestore.FieldValue
 
 
 data class User(
@@ -16,11 +15,9 @@ data class User(
     val website: String? = null,
     val submittedApps: Int? = null,
     val notificationPreferences: Map<String, Boolean>? = null,
-    val subscriptionTier: String? = null,
-    val subscriptionStatus: String? = null,
-    val subscriptionExpiryDate: Long? = null,
     val createdAt: Any? = null,
-    val lastActive: Any? = null
+    val lastActive: Any? = null,
+    val termsAccepted: Boolean = false
 )
 {
     // Helper properties to safely get timestamps as longs

@@ -68,6 +68,7 @@ fun ExploreScreen(
     val uiState by viewModel.uiState.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val errorMessage by viewModel.errorState.collectAsState()
+    val pickingAppId by viewModel.pickingAppId.collectAsState()
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val pullRefreshState = rememberPullToRefreshState()
@@ -142,7 +143,8 @@ fun ExploreScreen(
                             onPickApp = viewModel::pickApp,
                             pickedApps = uiState.pickedApps,
                             userOwnApps = uiState.userOwnApps,
-                            listState = listState
+                            listState = listState,
+                            pickingAppId = pickingAppId
                         )
                     }
                 }
@@ -230,14 +232,25 @@ fun ExploreTopBar(
             // Title - shown only when search is not expanded
             // Positioned at start with padding to not overlap the button
             if (!isSearchExpanded) {
-                Text(
-                    text = "Explore Apps",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                Column(
                     modifier = Modifier
                         .align(Alignment.CenterStart)
                         .padding(end = 56.dp) // Leave space for the button
-                )
+                ) {
+                    Text(
+                        text = "Explore Apps",
+                        style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+
+                    // Add subtitle
+                    Text(
+                        text = "Discover and test new applications",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
             }
             // Search field - only when expanded
             // Positioned with padding to not overlap the button
@@ -437,7 +450,8 @@ private fun ModernAppsList(
     onPickApp: (String) -> Unit,
     pickedApps: Set<String>,
     userOwnApps: Set<String>,
-    listState: LazyListState
+    listState: LazyListState,
+    pickingAppId: String? = null
 ) {
     LazyColumn(
         state = listState,
@@ -448,11 +462,13 @@ private fun ModernAppsList(
         items(apps, key = { it.id }) { app ->
             val isPicked = app.id in pickedApps
             val isOwnApp = app.id in userOwnApps
+            val isLoading = app.id == pickingAppId
             ModernAppCard(
                 app = app,
                 isPicked = isPicked,
                 isOwnApp = isOwnApp,
-                onPickApp = onPickApp
+                onPickApp = onPickApp,
+                isLoading = isLoading
             )
         }
 
@@ -467,7 +483,8 @@ private fun ModernAppCard(
     app: App,
     isPicked: Boolean,
     isOwnApp: Boolean,
-    onPickApp: (String) -> Unit
+    onPickApp: (String) -> Unit,
+    isLoading: Boolean = false
 ) {
     var appIconUrl by remember { mutableStateOf<String?>(null) }
     val context = LocalContext.current
@@ -550,38 +567,65 @@ private fun ModernAppCard(
                         fontWeight = FontWeight.Bold
                     )
 
-                    // Testers pill
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        modifier = Modifier.padding(top = 8.dp)
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    app.category?.let { category ->
+                        Surface(
+                            shape = RoundedCornerShape(16.dp),
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
+                            modifier = Modifier.padding(top = 8.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Groups,
-                                contentDescription = "Testers: ${app.activeTesters}/${app.totalTesters}",
-                                modifier = Modifier.size(14.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "${app.activeTesters}/${app.totalTesters} testers",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Category,
+                                    contentDescription = "Category: $category",
+                                    modifier = Modifier.size(14.dp),
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = category,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
                         }
                     }
+
+                    // Testers pill
+//                    Surface(
+//                        shape = RoundedCornerShape(16.dp),
+//                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+//                        modifier = Modifier.padding(top = 8.dp)
+//                    ) {
+//                        Row(
+//                            verticalAlignment = Alignment.CenterVertically,
+//                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+//                        ) {
+//                            Icon(
+//                                imageVector = Icons.Outlined.Groups,
+//                                contentDescription = "Testers: ${app.activeTesters}/${app.totalTesters}",
+//                                modifier = Modifier.size(14.dp),
+//                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+//                            )
+//                            Spacer(modifier = Modifier.width(4.dp))
+//                            Text(
+//                                text = "${app.activeTesters} testers",
+//                                style = MaterialTheme.typography.labelMedium,
+//                                color = MaterialTheme.colorScheme.onSurfaceVariant
+//                            )
+//                        }
+//                    }
                 }
 
                 // Pick button or status
                 PickButton(
                     isPicked = isPicked,
-                    isFull = (app.activeTesters ?: 0) >= (app.totalTesters ?: 0),
                     isOwnApp = isOwnApp,
-                    onPick = { onPickApp(app.id) }
+                    onPick = { onPickApp(app.id) },
+                    isLoading = isLoading
                 )
             }
 
@@ -621,7 +665,7 @@ private fun ModernAppCard(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(
-                            text = app.testingDays.toString(),
+                            text = app.testingDays.toString() +  " " + "days",
                             style = MaterialTheme.typography.labelMedium,
                             fontWeight = FontWeight.Medium
                         )
@@ -638,6 +682,14 @@ private fun ModernAppCard(
                         contentDescription = "Play Store",
                         onClick = {
                             openLink(context, app.playStoreUrl ?: "", "Play Store")
+                        }
+                    )
+
+                    SmallIconButton(
+                        icon = Icons.Outlined.Public,
+                        contentDescription = "Web Join Link",
+                        onClick = {
+                            openLink(context, app.testApkUrl ?: "", "Web Join Link")
                         }
                     )
 
@@ -658,9 +710,9 @@ private fun ModernAppCard(
 @Composable
 fun PickButton(
     isPicked: Boolean,
-    isFull: Boolean,
     isOwnApp: Boolean,
-    onPick: () -> Unit
+    onPick: () -> Unit,
+    isLoading: Boolean = false
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -728,19 +780,6 @@ fun PickButton(
                 }
             }
         }
-        isFull -> {
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-            ) {
-                Text(
-                    text = "Full",
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-            }
-        }
         else -> {
             Button(
                 onClick = onPick,
@@ -753,19 +792,35 @@ fun PickButton(
                 modifier = Modifier.graphicsLayer {
                     scaleX = scale
                     scaleY = scale
-                }
+                },
+                enabled = !isLoading
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Rounded.Add,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp)
+                if (isLoading) {
+                    // Show spinner when loading
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Pick",
+                        text = "Picking...",
                         fontWeight = FontWeight.Medium
                     )
+                } else {
+                    // Normal state
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Rounded.Add,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Pick",
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
         }

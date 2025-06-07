@@ -11,8 +11,6 @@ interface PickedAppRepository {
     suspend fun getPickedAppById(id: String): Result<PickedApp?>
     suspend fun getUserPickedApps(): Result<List<PickedApp>>
     fun getUserPickedAppsFlow(): Flow<Resource<List<PickedApp>>>
-    suspend fun getAppPickedApps(appId: String): Result<List<PickedApp>>
-    suspend fun hasUserPickedApp(appId: String): Result<Boolean>
     suspend fun updatePickedAppStatus(id: String, status: String): Result<Unit>
     suspend fun updatePickedAppProgress(id: String, completionRate: Float, currentTestDay: Int): Result<Unit>
     suspend fun togglePickedAppPin(id: String): Result<Unit>
